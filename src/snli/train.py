@@ -12,9 +12,9 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
-from snli.model import SNLIModel
-from snli.utils.dataset import SNLIDataset
-from utils.glove import load_glove
+from src.snli.model import SNLIModel
+from src.snli.utils.dataset import SNLIDataset
+from src.utils.glove import load_glove
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')

@@ -10,7 +10,7 @@ from torch.optim import lr_scheduler
 from torch.nn.utils import clip_grad_norm_
 from torchtext import data, datasets
 
-from sst.model import SSTModel
+from src.sst.model import SSTModel
 
 
 logging.basicConfig(level=logging.INFO,

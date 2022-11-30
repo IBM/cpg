@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torchtext import data, datasets
 
-from sst.model import SSTModel
+from src.sst.model import SSTModel
 
 
 def evaluate(args):

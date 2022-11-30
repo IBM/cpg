@@ -1,8 +1,8 @@
 import argparse
 import pickle
 
-from snli.utils.dataset import SNLIDataset
-from utils.vocab import Vocab
+from src.snli.utils.dataset import SNLIDataset
+from src.utils.vocab import Vocab
 
 
 def main():
