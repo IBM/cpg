@@ -57,7 +57,7 @@ def evaluate(args):
         label = batch.label
         logits = model(words=words, length=length)
         label_pred = logits.max(1)[1]
-        num_correct_batch = torch.eq(label, label_pred).long().sum(
+        num_correct_batch = torch.eq(label, label_pred).long().sum()
         num_correct_batch = num_correct_batch.item()
         num_correct += num_correct_batch
     print(f'# data: {num_data}')
