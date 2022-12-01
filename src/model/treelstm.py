@@ -249,6 +249,8 @@ class BinaryTreeLSTM(nn.Module):
             h, c = state
             l = (h[:, :-1, :], c[:, :-1, :])
             r = (h[:, 1:, :], c[:, 1:, :])
+            # TODO: change this to apply type appropriate treelstm layers for each different pair
+            # TODO: new_state = self.apply_treelstm(l, r)
             new_state = self.treelstm_layer(l=l, r=r)
             if i < max_depth - 2:
                 # We don't need to greedily select the composition in the
