@@ -44,9 +44,9 @@ class BinaryTreeLSTMLayer(nn.Module):
         return h, c
 
 
-class BinaryTreeLSTMTypeRoutedLayer(nn.Module):
+class BinaryTreeLSTMTypedLayer(nn.Module):
     def __init__(self, hidden_value_dim, hidden_type_dim):
-        super(BinaryTreeLSTMTypeRoutedLayer, self).__init__()
+        super(BinaryTreeLSTMTypedLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
         self.comp_linear_v = nn.Linear(in_features=2 * hidden_value_dim,
