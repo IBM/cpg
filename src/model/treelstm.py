@@ -57,7 +57,9 @@ class BinaryTreeLSTMTypeRoutedLayer(nn.Module):
 
     def reset_parameters(self):
         init.orthogonal_(self.comp_linear_v.weight.data)
+        init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
         init.constant_(self.comp_linear_v.bias.data, val=0)
+        init.constant_(self.comp_linear_t.bias.data, val=0)
 
     def forward(self, l=None, r=None):
         """
