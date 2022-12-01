@@ -52,7 +52,7 @@ class BinaryTreeLSTMTypeRoutedLayer(nn.Module):
         self.comp_linear_v = nn.Linear(in_features=2 * hidden_value_dim,
                                        out_features=5 * hidden_value_dim)
         self.comp_linear_t = nn.Linear(in_features=2 * hidden_type_dim,
-                                       out_features=hidden_type_dim)
+                                       out_features=2 * hidden_type_dim)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -91,10 +91,9 @@ class BinaryTreeLSTMTypeRoutedLayer(nn.Module):
         h_v = o.sigmoid() * c_v.tanh()
 
         # compute updated hidden state and memory types
-        hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
-        h_t = self.comp_linear_t(hlr_cat_t)
-        clr_cat_t = torch.cat([cl_t, cr_t], dim=2)
-        c_t = self.comp_linear_t(clr_cat_t)
+        hclr_cat_t = torch.cat([hl_t, hr_t, cl_t, cr_t], dim=2)
+        treelstm_type = self.comp_linear_t(hclr_cat_t)
+        h_t, c_t = treelstm_type.chunk(chunks=2, dim=2)
 
         # concatenate value and type information for the hidden state and memory
         new_h = torch.cat([h_v, h_t], dim=2)
