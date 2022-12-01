@@ -38,11 +38,69 @@ class BinaryTreeLSTMLayer(nn.Module):
         hlr_cat = torch.cat([hl, hr], dim=2)
         treelstm_vector = self.comp_linear(hlr_cat)
         i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
-        c = (cl*(fl + 1).sigmoid() + cr*(fr + 1).sigmoid()
-             + u.tanh()*i.sigmoid())
+        c = (cl * (fl + 1).sigmoid() + cr * (fr + 1).sigmoid()
+             + u.tanh() * i.sigmoid())
         h = o.sigmoid() * c.tanh()
         return h, c
 
+
+class BinaryTreeLSTMTypeRoutedLayer(nn.Module):
+    def __init__(self, hidden_value_dim, hidden_type_dim):
+        super(BinaryTreeLSTMTypeRoutedLayer, self).__init__()
+        self.hidden_value_dim = hidden_value_dim
+        self.hidden_type_dim = hidden_type_dim
+        self.comp_linear_v = nn.Linear(in_features=2 * hidden_value_dim,
+                                       out_features=5 * hidden_value_dim)
+        self.comp_linear_t = nn.Linear(in_features=2 * hidden_type_dim,
+                                       out_features=hidden_type_dim)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        init.orthogonal_(self.comp_linear_v.weight.data)
+        init.constant_(self.comp_linear_v.bias.data, val=0)
+
+    def forward(self, l=None, r=None):
+        """
+        Args:
+            l: A (h_l, c_l) tuple, where each value has the size
+                (batch_size, max_length, hidden_value_dim + hidden_type_dim).
+            r: A (h_r, c_r) tuple, where each value has the size
+                (batch_size, max_length, hidden_value_dim + hidden_type_dim).
+        Returns:
+            h, c: The hidden and cell state of the composed parent,
+                each of which has the size
+                (batch_size, max_length - 1, hidden_value_dim + hidden_type_dim).
+        """
+
+        # extract state from left and right args
+        hl, cl = l
+        hr, cr = r
+
+        # extract value and type information
+        hl_v, hl_t = torch.split(hl, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hl
+        cl_v, cl_t = torch.split(cl, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # cl
+        hr_v, hr_t = torch.split(hr, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hr
+        cr_v, cr_t = torch.split(cr, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # cr
+
+        # compute updated hidden state and memory values
+        hlr_cat_v = torch.cat([hl_v, hr_v], dim=2)
+        treelstm_vector = self.comp_linear_v(hlr_cat_v)
+        i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
+        c_v = (cl_v * (fl + 1).sigmoid() + cr_v * (fr + 1).sigmoid()
+               + u.tanh() * i.sigmoid())
+        h_v = o.sigmoid() * c_v.tanh()
+
+        # compute updated hidden state and memory types
+        hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
+        h_t = self.comp_linear_t(hlr_cat_t)
+        clr_cat_t = torch.cat([cl_t, cr_t], dim=2)
+        c_t = self.comp_linear_t(clr_cat_t)
+
+        # concatenate value and type information for the hidden state and memory
+        new_h = torch.cat([h_v, h_t], dim=2)
+        new_c = torch.cat([c_v, c_t], dim=2)
+
+        return new_h, new_c
 
 class BinaryTreeLSTM(nn.Module):
 
@@ -196,12 +254,12 @@ class BinaryTreeLSTM(nn.Module):
                 # last iteration, since it has only one option left.
                 new_h, new_c, select_mask, selected_h = self.select_composition(
                     old_state=state, new_state=new_state,
-                    mask=length_mask[:, i+1:])
+                    mask=length_mask[:, i + 1:])
                 new_state = (new_h, new_c)
                 select_masks.append(select_mask)
                 if self.intra_attention:
                     nodes.append(selected_h)
-            done_mask = length_mask[:, i+1]
+            done_mask = length_mask[:, i + 1]
             state = self.update_state(old_state=state, new_state=new_state,
                                       done_mask=done_mask)
             if self.intra_attention and i >= max_depth - 2:
