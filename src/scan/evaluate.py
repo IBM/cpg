@@ -4,44 +4,40 @@ import numpy as np
 import torch
 from torchtext import data, datasets
 
-from src.sst.model import SSTModel
+from src.scan.model import SCANModel
 
-# FIXME: replace with our code
+from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader
+
 
 def evaluate(args):
-    text_field = data.Field(lower=args.lower, include_lengths=True,
-                            batch_first=True)
-    label_field = data.Field(sequential=False)
-
-    filter_pred = None
-    if not args.fine_grained:
-        filter_pred = lambda ex: ex.label != 'neutral'
-    dataset_splits = datasets.SST.splits(
-        root='./data/sst', text_field=text_field, label_field=label_field,
-        fine_grained=args.fine_grained, train_subtrees=True,
-        filter_pred=filter_pred)
-    test_dataset = dataset_splits[2]
-
-    text_field.build_vocab(*dataset_splits)
-    label_field.build_vocab(*dataset_splits)
-
-    print(f'Number of classes: {len(label_field.vocab)}')
-
-    _, _, test_loader = data.BucketIterator.splits(
-        datasets=dataset_splits, batch_size=args.batch_size, device=args.device)
-
-    num_classes = len(label_field.vocab)
-    model = SSTModel(num_classes=num_classes, num_words=len(text_field.vocab),
+    # load test data
+    _, test_data = load_SCAN_length()
+    x_vocab = build_vocab([x for x, _ in test_data],
+                           base_tokens=['<PAD>', '<UNK>'])
+    y_vocab = build_vocab([y for _, y in test_data],
+                           base_tokens=['<PAD>', '<SOS>', '<EOS>', '<UNK>'])
+    preprocessed_test_data = preprocess(test_data, x_vocab, y_vocab)
+    test_loader = MyDataLoader(preprocessed_test_data,
+                                batch_size=args.batch_size,
+                                shuffle=False,
+                                x_pad_idx=x_vocab.token_to_idx('<PAD>'),
+                                y_pad_idx=y_vocab.token_to_idx('<PAD>'),
+                                max_x_seq_len=args.max_x_seq_len,
+                                max_y_seq_len=args.max_y_seq_len)
+    
+    model = SCANModel(y_vocab=y_vocab, x_vocab=x_vocab,
                      word_dim=args.word_dim, hidden_dim=args.hidden_dim,
-                     clf_hidden_dim=args.clf_hidden_dim,
-                     clf_num_layers=args.clf_num_layers,
+                     decoder_hidden_dim=args.decoder_hidden_dim,
+                     decoder_num_layers=args.decoder_num_layers,
                      use_leaf_rnn=args.leaf_rnn,
                      bidirectional=args.bidirectional,
                      intra_attention=args.intra_attention,
                      use_batchnorm=args.batchnorm,
-                     dropout_prob=args.dropout)
+                     dropout_prob=args.dropout,
+                     max_y_seq_len=args.max_y_seq_len)
+    
     num_params = sum(np.prod(p.size()) for p in model.parameters())
-    num_embedding_params = np.prod(model.word_embedding.weight.size())
+    num_embedding_params = np.prod(model.embedding.weight.size())
     print(f'# of parameters: {num_params}')
     print(f'# of word embedding parameters: {num_embedding_params}')
     print(f'# of parameters (excluding word embeddings): '
@@ -50,19 +46,18 @@ def evaluate(args):
     model.eval()
     model.to(args.device)
     torch.set_grad_enabled(False)
-    num_correct = 0
-    num_data = len(test_dataset)
+    accuracy_sum = 0
     for batch in test_loader:
-        words, length = batch.text
-        label = batch.label
-        logits = model(words=words, length=length)
-        label_pred = logits.max(1)[1]
-        num_correct_batch = torch.eq(label, label_pred).long().sum()
-        num_correct_batch = num_correct_batch.item()
-        num_correct += num_correct_batch
-    print(f'# data: {num_data}')
-    print(f'# correct: {num_correct}')
-    print(f'Accuracy: {num_correct / num_data:.4f}')
+        batch_x, batch_y = batch
+        B, L = batch_x.size()
+        outputs, _, _ = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
+        _, M = batch_y.size()
+        outputs = outputs[:, :M]
+        outputs = outputs.reshape(B * M)
+        accuracy = torch.eq(batch_y.view(B * M), outputs).float().mean()
+        accuracy_sum += accuracy.item()
+    accuracy = accuracy_sum / test_loader.num_batches
+    print(f'accuracy: {accuracy:.4f}')
 
 
 def main():
@@ -70,17 +65,19 @@ def main():
     parser.add_argument('--model', required=True)
     parser.add_argument('--word-dim', required=True, type=int)
     parser.add_argument('--hidden-dim', required=True, type=int)
-    parser.add_argument('--clf-hidden-dim', required=True, type=int)
-    parser.add_argument('--clf-num-layers', required=True, type=int)
+    parser.add_argument('--decoder-hidden-dim', required=True, type=int)
+    parser.add_argument('--decoder-num-layers', required=True, type=int)
     parser.add_argument('--leaf-rnn', default=False, action='store_true')
     parser.add_argument('--intra-attention', default=False, action='store_true')
     parser.add_argument('--batchnorm', default=False, action='store_true')
     parser.add_argument('--dropout', default=0.0, type=float)
     parser.add_argument('--device', default='cpu')
-    parser.add_argument('--batch-size', default=128, type=int)
+    parser.add_argument('--batch-size', default=16, type=int)
     parser.add_argument('--bidirectional', default=False, action='store_true')
     parser.add_argument('--fine-grained', default=False, action='store_true')
     parser.add_argument('--lower', default=False, action='store_true')
+    parser.add_argument('--max_x_seq_len', default = 9)
+    parser.add_argument('--max_y_seq_len', default = 49)
     args = parser.parse_args()
     evaluate(args)
 
