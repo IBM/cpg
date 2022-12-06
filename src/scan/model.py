@@ -51,8 +51,9 @@ class SCANModel(nn.Module):
 
         self.dropout = nn.Dropout(dropout_prob)
         self.embedding = nn.Embedding(num_embeddings=self.num_words,
-                                           embedding_dim=word_dim)
-        self.encoder = BinaryTreeLSTM(word_dim=word_dim, hidden_dim=hidden_dim,
+                                      embedding_dim=word_dim)
+        self.encoder = BinaryTreeLSTM(word_dim=word_dim,
+                                      hidden_dim=hidden_dim,
                                       use_leaf_rnn=use_leaf_rnn,
                                       intra_attention=intra_attention,
                                       gumbel_temperature=1,
@@ -68,7 +69,7 @@ class SCANModel(nn.Module):
         B, _ = sem_f.size()
         y_vocab = self.y_vocab
         V = y_vocab.size()
-        M  = max_seq_len
+        M = max_seq_len
 
         # first token is '<SOS>', first hidden is `sem_f` repeated in each RNN hidden layer
         inputs = torch.tensor([y_vocab.token_to_idx('<SOS>') for _ in range(B)], dtype=torch.long)

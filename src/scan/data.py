@@ -96,7 +96,7 @@ class Vocabulary:
         return self._token_to_tensor.get(token, self._token_to_tensor['<UNK>'])
 
     def token_to_ohe(self, token):
-        return torch.nn.functional.one_hot(self._token_to_tensor[token], len(self)).float()
+        return torch.nn.functional.one_hot(self._token_to_tensor[token], len(self)).long()
 
     def encode(self, x):
         return [self.token_to_idx(token) for token in x]
@@ -149,8 +149,13 @@ class MyDataLoader:
             yield X_tensor, Y_tensor
             
     def make_batch(self, data, max_seq_len, pad_idx):
-        seq_len = max(min(max_seq_len, max(len(x) for x in data)), 2)
+        seq_len = max(max_seq_len, max(len(x) for x in data))
         batch = torch.full((len(data), seq_len), pad_idx, dtype=torch.long)
         for i, x in enumerate(data):
             batch[i, :len(x)] = torch.tensor(x, dtype=torch.long)
         return batch
+
+    def get_full_data(self, max_x_vocab, max_y_vocab):
+        X = torch.concat([torch.nn.functional.one_hot(i[0], num_classes=max_x_vocab).float() for i in self.batches], dim=0)
+        Y = torch.concat([torch.nn.functional.one_hot(i[1], num_classes=max_y_vocab).float() for i in self.batches], dim=0)
+        return X, Y

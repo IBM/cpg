@@ -2,7 +2,9 @@ import math
 
 import torch
 from torch import nn
+from torch.distributions import Categorical
 from torch.nn import init
+import torch.functional as F
 
 from . import basic
 
@@ -43,16 +45,56 @@ class BinaryTreeLSTMLayer(nn.Module):
         h = o.sigmoid() * c.tanh()
         return h, c
 
+class FeedForward(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim):
+        super().__init__()
+
+        dims = [input_dim] + hidden_dims + [output_dim]
+        self.layers = [nn.Linear(in_d, out_d)
+                       for in_d, out_d in zip(dims[:-1], dims[1:])]
+
+    def forward(self, x):
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
+            if i != len(self.layers) - 1:
+                x = F.relu(x)
+        return x
+
+class TypePredictor(nn.Module):
+
+    def __init__(self, repr_dim, hidden_dims, num_types):
+        super().__init__()
+        self.net = FeedForward(repr_dim, hidden_dims, num_types)
+
+    def score(self, x):
+        return self.net(x)
+
+    def sample(self, type_scores):
+        B, L, T = type_scores.size()
+
+        type_scores = type_scores.view(B * L, T)
+        distribution = Categorical(logits=type_scores)
+        samples = distribution.sample()
+        log_probs = distribution.log_prob(samples)
+        return F.one_hot(samples, num_classes=T).view(B, L, T).float(), log_probs.view(B, L)
+
+    def forward(self, x):
+        type_scores = self.score(x)
+        samples, log_probs = self.sample(type_scores)
+        return samples, log_probs
+
+        return samples
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
-    def __init__(self, hidden_value_dim, hidden_type_dim):
+    def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
         self.comp_linear_v = nn.Linear(in_features=2 * hidden_value_dim,
                                        out_features=5 * hidden_value_dim)
-        self.comp_linear_t = nn.Linear(in_features=2 * hidden_type_dim,
+        self.comp_linear_t = nn.Linear(in_features=4 * hidden_type_dim,
                                        out_features=2 * hidden_type_dim)
+        self.type_predictor = type_predictor
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -60,6 +102,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
         init.constant_(self.comp_linear_v.bias.data, val=0)
         init.constant_(self.comp_linear_t.bias.data, val=0)
+        # type predictor's parameter are not reset
 
     def forward(self, l=None, r=None):
         """
@@ -97,11 +140,17 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         treelstm_type = self.comp_linear_t(hclr_cat_t)
         h_t, c_t = treelstm_type.chunk(chunks=2, dim=2)
 
+        # compute type prediction from semantic value
+        _, sem_h_t_log_probs = self.type_predictor(h_v)
+
+        # compute homomorphic loss
+        hom_loss = torch.nn.KLDivLoss(h_t, sem_h_t_log_probs)
+
         # concatenate value and type information for the hidden state and memory
         new_h = torch.cat([h_v, h_t], dim=2)
         new_c = torch.cat([c_v, c_t], dim=2)
 
-        return new_h, new_c
+        return new_h, new_c, hom_loss
 
 class BinaryTreeLSTM(nn.Module):
 
