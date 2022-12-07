@@ -124,8 +124,7 @@ def train(args):
     def add_scalar_summary(summary_writer, name, value, step):
         if torch.is_tensor(value):
             value = value.item()
-        summary_writer.add_scalar(tag=name, scalar_value=value,
-                                  global_step=step)
+        summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
     validate_every = num_train_batches // 20
@@ -136,12 +135,8 @@ def train(args):
             train_loss, train_accuracy = run_iter(
                 batch=train_batch, is_training=True)
             iter_count += 1
-            add_scalar_summary(
-                summary_writer=train_summary_writer,
-                name='loss', value=train_loss, step=iter_count)
-            add_scalar_summary(
-                summary_writer=train_summary_writer,
-                name='accuracy', value=train_accuracy, step=iter_count)
+            add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
+            add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
 
             if (batch_iter + 1) % validate_every == 0:
                 valid_loss_sum = valid_accuracy_sum = 0
@@ -153,17 +148,11 @@ def train(args):
                     valid_accuracy_sum += valid_accuracy.item()
                 valid_loss = valid_loss_sum / num_valid_batches
                 valid_accuracy = valid_accuracy_sum / num_valid_batches
-                add_scalar_summary(
-                    summary_writer=valid_summary_writer,
-                    name='loss', value=valid_loss, step=iter_count)
-                add_scalar_summary(
-                    summary_writer=valid_summary_writer,
-                    name='accuracy', value=valid_accuracy, step=iter_count)
+                add_scalar_summary(summary_writer=valid_summary_writer, name='loss', value=valid_loss, step=iter_count)
+                add_scalar_summary(summary_writer=valid_summary_writer, name='accuracy', value=valid_accuracy, step=iter_count)
                 scheduler.step(valid_accuracy)
                 progress = iter_count / train_loader.num_batches
-                logging.info(f'Epoch {progress:.2f}: '
-                            f'valid loss = {valid_loss:.4f}, '
-                            f'valid accuracy = {valid_accuracy:.4f}')
+                logging.info(f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
                 if valid_accuracy > best_vaild_accuacy:
                     best_vaild_accuacy = valid_accuracy
                     model_filename = (f'model-{progress:.2f}'
@@ -187,8 +176,7 @@ def main():
     parser.add_argument('--dropout', default=0.0, type=float)
     parser.add_argument('--l2reg', default=0.0, type=float)
     parser.add_argument('--pretrained', default=None)
-    parser.add_argument('--fix-word-embedding', default=False,
-                        action='store_true')
+    parser.add_argument('--fix-word-embedding', default=False, action='store_true')
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--batch-size', required=True, type=int)
     parser.add_argument('--max-epoch', required=True, type=int)
@@ -199,7 +187,7 @@ def main():
     parser.add_argument('--halve-lr-every', default=2, type=int)
     parser.add_argument('--max_x_seq_len', default = 9)
     parser.add_argument('--max_y_seq_len', default = 49)
-    parser.add_argument('--data_frac', default = 1.)
+    parser.add_argument('--data_frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True)
     args = parser.parse_args()
     train(args)
