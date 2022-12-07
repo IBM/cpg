@@ -18,14 +18,13 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(hidden_dim, vocab.size())
 
     def forward(self, x, hidden):
-        B = x.size()
-        B, N, H = hidden.size()
+        B = x.size()[0]
         D = self.input_dim
         O = self.vocab.size()
         x = self.embedding(x)
-        out, hidden = self.gru(x.view(B, 1, D), hidden.view(N, B, H))
+        out, hidden = self.gru(x.view(B, 1, D), hidden)
         out = self.fc(out)
-        return out.view(B, O), hidden.view(B, N, H)
+        return out.view(B, O), hidden
 
 
 class SCANModel(nn.Module):
@@ -73,7 +72,7 @@ class SCANModel(nn.Module):
 
         # first token is '<SOS>', first hidden is `sem_f` repeated in each RNN hidden layer
         inputs = torch.tensor([y_vocab.token_to_idx('<SOS>') for _ in range(B)], dtype=torch.long)
-        hidden = sem_f.unsqueeze(1).repeat_interleave(self.decoder.num_layers, dim=1)
+        hidden = sem_f.unsqueeze(0).repeat_interleave(self.decoder.num_layers, dim=0)
 
         unf_idxs = torch.arange(B) # unfinished batch indices
         decoded = torch.full((B, M), -1) # -1 represents an empty slot, used to later compute mask
@@ -83,15 +82,18 @@ class SCANModel(nn.Module):
             outputs, hidden = self.decoder(inputs, hidden)
 
             decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+            # TK -- changed from argmax
+            #probs = torch.exp(outputs)
+            #decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
+            #decoded[unf_idxs, t] = decoded_idxs
+
             logits[unf_idxs, t, :] = outputs # save logits for loss computation
 
             if force is not None:
-                if t < force.shape[1]:
+                if t+1 < force.shape[1]:
                     inputs = force[:, t]
                 else:
-                    inputs = decoded_idxs
-                    # go on until reaching maximum length
-                    #break # break if we've reached the end of the forced input
+                    break # break if we've reached the end of the forced input
             else:
                 is_finished = decoded_idxs == y_vocab.token_to_idx('<EOS>')
                 unf_idxs = unf_idxs[~is_finished]
