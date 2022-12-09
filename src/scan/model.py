@@ -75,9 +75,9 @@ class SCANModel(nn.Module):
         hidden = sem_f.unsqueeze(0).repeat_interleave(self.decoder.num_layers, dim=0)
 
         unf_idxs = torch.arange(B) # unfinished batch indices
-        decoded = torch.full((B, M), -1) # -1 represents an empty slot, used to later compute mask
+        decoded = torch.full((B, M), 0) # -1 represents an empty slot, used to later compute mask
         logits = torch.zeros((B, M, V))
-        for t in range(max_seq_len):
+        for t in range(M):
 
             outputs, hidden = self.decoder(inputs, hidden)
 
@@ -99,17 +99,15 @@ class SCANModel(nn.Module):
                 unf_idxs = unf_idxs[~is_finished]
                 if len(unf_idxs) > 0:
                     inputs = decoded_idxs[~is_finished]
-                    hidden = hidden[~is_finished]
+                    hidden = hidden[:, ~is_finished]
                 else:
                     break # break if all sequences have reached '<EOS>'
         
-        # ignore mask for now
-        mask = decoded != -1 # needed to compute loss (we only want to compute losses for predicted tokens)
-        return decoded[:, :t+1], logits[:, :t+1, :], mask
+        return decoded[:, :t+1], logits[:, :t+1, :]
 
     def forward(self, x, length, force=None):
         x_embed = self.embedding(x)
         x_embed = self.dropout(x_embed)
         sentence_vector, _ = self.encoder(input=x_embed, length=length)
-        outputs, logits, mask = self.decode(sentence_vector, self.max_y_seq_len, force)
-        return outputs, logits, mask
+        outputs, logits = self.decode(sentence_vector, self.max_y_seq_len, force)
+        return outputs, logits

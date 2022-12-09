@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_length()
+    train_data, test_data = load_SCAN_simple()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train data set size: {len(train_data)}")
@@ -94,22 +94,29 @@ def train(args):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
-        # FIXME: remove teacher forcing during validation
-        if args.use_teacher_forcing:
-            outputs, logits, mask = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
+        if is_training and args.use_teacher_forcing:
+            outputs, logits = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
         else:
-            outputs, logits, mask = model(x=batch_x, length=torch.full((B, 1), L).view(B))
+            outputs, logits = model(x=batch_x, length=torch.full((B, 1), L).view(B))
         
         _, N, V = logits.size()
         _, M = batch_y.size()
-        expected_padded = torch.full((B, N), y_vocab.token_to_idx('<PAD>'))
-        expected_padded[:, :M] = batch_y
-        expected_padded = expected_padded.reshape(B * N)
-        logits = logits.reshape(B * N, V)
-        outputs = outputs[:, :M]
-        outputs = outputs.reshape(B * M)
-        accuracy = torch.eq(batch_y.view(B * M), outputs).float().mean()
-        loss = criterion(input=logits, target=expected_padded)
+        if N >= M:
+            # pad expected
+            expected_padded = torch.full((B, N), y_vocab.token_to_idx('<PAD>'))
+            expected_padded[:, :M] = batch_y
+            outputs_padded = outputs
+        else:
+            # pad outputs
+            expected_padded = batch_y
+            outputs_padded = torch.full((B, M), y_vocab.token_to_idx('<PAD>'))
+            outputs_padded[:, :N] = outputs
+        # measure accuracy
+        match = torch.eq(expected_padded, outputs_padded).float()
+        match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
+        accuracy = torch.tensor(match).mean()
+        # compute loss
+        loss = criterion(input=logits.reshape(B * N, V), target=expected_padded[:, :N].reshape(B * N))
         # use nll loss and mask
         #loss = F.nll_loss(logits, expected_padded, reduction='none')
         #mask = mask.reshape(B * N)
@@ -128,13 +135,16 @@ def train(args):
                                   global_step=step)
 
     num_train_batches = train_loader.num_batches
-    validate_every = num_train_batches // 20
+    validate_every = num_train_batches // 5
     best_vaild_accuacy = 0
     iter_count = 0
     for _ in range(args.max_epoch):
         for batch_iter, train_batch in enumerate(train_loader):
             train_loss, train_accuracy = run_iter(
                 batch=train_batch, is_training=True)
+            print("iteration:", iter_count)
+            print("train loss:", train_loss.item())
+            print("train accuracy:", train_accuracy.item())
             iter_count += 1
             add_scalar_summary(
                 summary_writer=train_summary_writer,
