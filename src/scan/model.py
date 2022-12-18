@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import init
 
-from src.model.treelstm import BinaryTreeLSTM
+from src.model.treelstm import TypedBinaryTreeLSTM
 
 
 class Decoder(nn.Module):
@@ -29,7 +29,7 @@ class Decoder(nn.Module):
 
 class SCANModel(nn.Module):
 
-    def __init__(self, y_vocab, x_vocab, word_dim, hidden_dim,
+    def __init__(self, y_vocab, x_vocab, word_dim, hidden_value_dim, hidden_type_dim,
                  decoder_hidden_dim, decoder_num_layers, use_leaf_rnn, bidirectional,
                  intra_attention, use_batchnorm, dropout_prob, max_y_seq_len):
         super(SCANModel, self).__init__()
@@ -38,7 +38,8 @@ class SCANModel(nn.Module):
         self.y_vocab = y_vocab
         self.x_vocab = x_vocab
         self.word_dim = word_dim
-        self.hidden_dim = hidden_dim
+        self.hidden_value_dim = hidden_value_dim
+        self.hidden_type_dim = hidden_type_dim
         self.decoder_hidden_dim = decoder_hidden_dim
         self.decoder_num_layers = decoder_num_layers
         self.use_leaf_rnn = use_leaf_rnn
@@ -51,12 +52,13 @@ class SCANModel(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
         self.embedding = nn.Embedding(num_embeddings=self.num_words,
                                       embedding_dim=word_dim)
-        self.encoder = BinaryTreeLSTM(word_dim=word_dim,
-                                      hidden_dim=hidden_dim,
-                                      use_leaf_rnn=use_leaf_rnn,
-                                      intra_attention=intra_attention,
-                                      gumbel_temperature=1,
-                                      bidirectional=bidirectional)
+        self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
+                                          hidden_value_dim=hidden_value_dim,
+                                          hidden_type_dim=hidden_type_dim,
+                                          use_leaf_rnn=use_leaf_rnn,
+                                          intra_attention=intra_attention,
+                                          gumbel_temperature=1,
+                                          bidirectional=bidirectional)
         self.decoder = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.reset_parameters()
 
@@ -108,6 +110,7 @@ class SCANModel(nn.Module):
     def forward(self, x, length, force=None):
         x_embed = self.embedding(x)
         x_embed = self.dropout(x_embed)
-        sentence_vector, _ = self.encoder(input=x_embed, length=length)
+        sentence_vector, _, hom_loss = self.encoder(input=x_embed, length=length)
+        sentence_vector = sentence_vector[:, :self.hidden_value_dim]
         outputs, logits = self.decode(sentence_vector, self.max_y_seq_len, force)
-        return outputs, logits
+        return outputs, logits, hom_loss

@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 from torch.nn import init
-import torch.functional as F
+from torch.nn import functional as F
 
 from . import basic
 
@@ -83,7 +83,6 @@ class TypePredictor(nn.Module):
         samples, log_probs = self.sample(type_scores)
         return samples, log_probs
 
-        return samples
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
     def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor):
@@ -141,24 +140,26 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         h_t, c_t = treelstm_type.chunk(chunks=2, dim=2)
 
         # compute type prediction from semantic value
-        _, sem_h_t_log_probs = self.type_predictor(h_v)
+        sem_h_t, sem_h_t_log_probs = self.type_predictor(h_v)
 
         # compute homomorphic loss
-        hom_loss = torch.nn.KLDivLoss(h_t, sem_h_t_log_probs)
+        kl_loss = torch.nn.KLDivLoss()
+        hom_loss = kl_loss(F.log_softmax(h_t, dim=0), sem_h_t)
 
         # concatenate value and type information for the hidden state and memory
         new_h = torch.cat([h_v, h_t], dim=2)
         new_c = torch.cat([c_v, c_t], dim=2)
 
-        return new_h, new_c, hom_loss
+        return (new_h, new_c), hom_loss
 
-class BinaryTreeLSTM(nn.Module):
+class TypedBinaryTreeLSTM(nn.Module):
 
-    def __init__(self, word_dim, hidden_dim, use_leaf_rnn, intra_attention,
+    def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
                  gumbel_temperature, bidirectional):
-        super(BinaryTreeLSTM, self).__init__()
+        super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
-        self.hidden_dim = hidden_dim
+        self.hidden_value_dim = hidden_value_dim
+        self.hidden_type_dim = hidden_type_dim
         self.use_leaf_rnn = use_leaf_rnn
         self.intra_attention = intra_attention
         self.gumbel_temperature = gumbel_temperature
@@ -168,19 +169,20 @@ class BinaryTreeLSTM(nn.Module):
 
         if use_leaf_rnn:
             self.leaf_rnn_cell = nn.LSTMCell(
-                input_size=word_dim, hidden_size=hidden_dim)
+                input_size=word_dim, hidden_size=hidden_value_dim + hidden_type_dim)
             if bidirectional:
                 self.leaf_rnn_cell_bw = nn.LSTMCell(
-                    input_size=word_dim, hidden_size=hidden_dim)
+                    input_size=word_dim, hidden_size=hidden_value_dim + hidden_type_dim)
         else:
             self.word_linear = nn.Linear(in_features=word_dim,
-                                         out_features=2 * hidden_dim)
+                                         out_features=2 * (hidden_value_dim + hidden_type_dim))
+        self.type_predictor = TypePredictor(hidden_value_dim, [32, 32], hidden_type_dim)
         if self.bidirectional:
-            self.treelstm_layer = BinaryTreeLSTMLayer(2 * hidden_dim)
-            self.comp_query = nn.Parameter(torch.FloatTensor(2 * hidden_dim))
+            self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim, self.type_predictor)
+            self.comp_query = nn.Parameter(torch.FloatTensor(2 * (hidden_value_dim + hidden_type_dim)))
         else:
-            self.treelstm_layer = BinaryTreeLSTMLayer(hidden_dim)
-            self.comp_query = nn.Parameter(torch.FloatTensor(hidden_dim))
+            self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim, self.type_predictor)
+            self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
         self.reset_parameters()
 
@@ -220,7 +222,7 @@ class BinaryTreeLSTM(nn.Module):
         old_h_left, old_h_right = old_h[:, :-1, :], old_h[:, 1:, :]
         old_c_left, old_c_right = old_c[:, :-1, :], old_c[:, 1:, :]
         comp_weights = (self.comp_query * new_h).sum(-1)
-        comp_weights = comp_weights / math.sqrt(self.hidden_dim)
+        comp_weights = comp_weights / math.sqrt(self.hidden_value_dim + self.hidden_type_dim)
         if self.training:
             select_mask = basic.st_gumbel_softmax(
                 logits=comp_weights, temperature=self.gumbel_temperature,
@@ -294,13 +296,15 @@ class BinaryTreeLSTM(nn.Module):
         nodes = []
         if self.intra_attention:
             nodes.append(state[0])
+        hom_loss_sum = 0
         for i in range(max_depth - 1):
             h, c = state
             l = (h[:, :-1, :], c[:, :-1, :])
             r = (h[:, 1:, :], c[:, 1:, :])
             # TODO: change this to apply type appropriate treelstm layers for each different pair
             # TODO: new_state = self.apply_treelstm(l, r)
-            new_state = self.treelstm_layer(l=l, r=r)
+            new_state, hom_loss = self.treelstm_layer(l=l, r=r)
+            hom_loss_sum += hom_loss
             if i < max_depth - 2:
                 # We don't need to greedily select the composition in the
                 # last iteration, since it has only one option left.
@@ -336,6 +340,6 @@ class BinaryTreeLSTM(nn.Module):
             h = (att_weights_expand * nodes).sum(1)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
-            return h.squeeze(1), c.squeeze(1)
+            return h.squeeze(1), c.squeeze(1), hom_loss_sum
         else:
-            return h.squeeze(1), c.squeeze(1), select_masks
+            return h.squeeze(1), c.squeeze(1), hom_loss_sum, select_masks
