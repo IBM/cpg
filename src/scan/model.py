@@ -62,6 +62,9 @@ class SCANModel(nn.Module):
         self.decoder = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.reset_parameters()
 
+    def reduce_gumbel_temp(self, iter):
+        self.encoder.reduce_gumbel_temp(iter)
+
     def reset_parameters(self):
         init.normal_(self.embedding.weight.data, mean=0, std=0.01)
         self.encoder.reset_parameters()

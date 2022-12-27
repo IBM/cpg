@@ -140,7 +140,7 @@ def train(args):
     for _ in range(args.max_epoch):
         for batch_iter, train_batch in enumerate(train_loader):
             print("\niteration:", iter_count)
-            if iter_count > 500:
+            if iter_count > 100:
                 train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
                                                                 is_training=True,
                                                                 use_hom_loss=True)
@@ -157,6 +157,9 @@ def train(args):
             add_scalar_summary(
                 summary_writer=train_summary_writer,
                 name='accuracy', value=train_accuracy, step=iter_count)
+
+            if (iter_count + 1) % 100 == 0:
+                model.reduce_gumbel_temp(iter_count)
 
             if (batch_iter + 1) % validate_every == 0:
                 valid_loss_sum = valid_accuracy_sum = 0

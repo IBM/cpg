@@ -7,6 +7,7 @@ from torch.nn import init
 from torch.nn import functional as F
 
 from . import basic
+import numpy as np
 
 
 class BinaryTreeLSTMLayer(nn.Module):
@@ -62,9 +63,16 @@ class FeedForward(nn.Module):
 
 class TypePredictor(nn.Module):
 
-    def __init__(self, repr_dim, hidden_dims, num_types):
+    def __init__(self, repr_dim, hidden_dims, num_types, gumbel_temp=10.):
         super().__init__()
         self.net = FeedForward(repr_dim, hidden_dims, num_types)
+        self.gumbel_temp = gumbel_temp
+
+    def reduce_gumbel_temp(self, factor, iter, verbose=False):
+        new_temp = np.maximum(self.gumbel_temp * np.exp(-factor * iter), 0.5)
+        if verbose:
+            print(f'Gumbel temp lowered from {self.gumbel_temp:g} to {new_temp:g}')
+        self.gumbel_temp = new_temp
 
     def score(self, x):
         return self.net(x)
@@ -72,16 +80,14 @@ class TypePredictor(nn.Module):
     def sample(self, type_scores):
         B, L, T = type_scores.size()
 
-        type_scores = type_scores.view(B * L, T)
-        distribution = Categorical(logits=type_scores)
-        samples = distribution.sample()
-        log_probs = distribution.log_prob(samples)
-        return F.one_hot(samples, num_classes=T).view(B, L, T).float(), log_probs.view(B, L)
+        distribution = F.gumbel_softmax(type_scores, tau=self.gumbel_temp, dim=-1)
+        samples = torch.argmax(distribution, dim=-1)
+        return samples, distribution
 
     def forward(self, x):
         type_scores = self.score(x)
-        samples, log_probs = self.sample(type_scores)
-        return samples, log_probs
+        samples, distribution = self.sample(type_scores)
+        return samples, distribution
 
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
@@ -140,11 +146,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         h_t, c_t = treelstm_type.chunk(chunks=2, dim=2)
 
         # compute type prediction from semantic value
-        sem_h_t, sem_h_t_log_probs = self.type_predictor(h_v)
+        _, sem_h_t = self.type_predictor(h_v)
 
         # compute homomorphic loss
         kl_loss = torch.nn.KLDivLoss()
-        hom_loss = kl_loss(F.log_softmax(h_t, dim=0), sem_h_t)
+        hom_loss = kl_loss(F.log_softmax(h_t, dim=-1), sem_h_t)
 
         # concatenate value and type information for the hidden state and memory
         new_h = torch.cat([h_v, h_t], dim=2)
@@ -169,13 +175,13 @@ class TypedBinaryTreeLSTM(nn.Module):
 
         if use_leaf_rnn:
             self.leaf_rnn_cell = nn.LSTMCell(
-                input_size=word_dim, hidden_size=hidden_value_dim + hidden_type_dim)
+                input_size=word_dim, hidden_size=hidden_value_dim)
             if bidirectional:
                 self.leaf_rnn_cell_bw = nn.LSTMCell(
-                    input_size=word_dim, hidden_size=hidden_value_dim + hidden_type_dim)
+                    input_size=word_dim, hidden_size=hidden_value_dim)
         else:
             self.word_linear = nn.Linear(in_features=word_dim,
-                                         out_features=2 * (hidden_value_dim + hidden_type_dim))
+                                         out_features=2 * hidden_value_dim)
         self.type_predictor = TypePredictor(hidden_value_dim, [32, 32], hidden_type_dim)
         if self.bidirectional:
             self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim, self.type_predictor)
@@ -185,6 +191,9 @@ class TypedBinaryTreeLSTM(nn.Module):
             self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
         self.reset_parameters()
+
+    def reduce_gumbel_temp(self, iter):
+        self.type_predictor.reduce_gumbel_temp(0.003, iter, verbose=True)
 
     def reset_parameters(self):
         if self.use_leaf_rnn:
@@ -291,8 +300,12 @@ class TypedBinaryTreeLSTM(nn.Module):
                 cs = torch.cat([cs, cs_bw], dim=2)
             state = (hs, cs)
         else:
-            state = self.word_linear(input)
-            state = state.chunk(chunks=2, dim=2)
+            state_v = self.word_linear(input)
+            h_v, c_v = state_v.chunk(chunks=2, dim=2)
+            _, h_t = self.type_predictor(h_v)
+            h = torch.concat((h_v, h_t), dim=2)
+            c = torch.concat((c_v, h_t), dim=2)
+            state = h, c
         nodes = []
         if self.intra_attention:
             nodes.append(state[0])
