@@ -39,7 +39,6 @@ def greedy_select(logits, mask=None):
                                  num_classes=logits.size(1))
     return one_hot
 
-
 def st_gumbel_softmax(logits, temperature=1.0, mask=None):
     """
     Return the result of Straight-Through Gumbel-Softmax Estimation.

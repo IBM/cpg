@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 from torch.nn import init
-import torch.functional as F
+import torch.nn.functional as F
 
 from . import basic
 
@@ -155,7 +155,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 class BinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional):
+                 gumbel_temperature, bidirectional, is_lstm=False):
         super(BinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
         self.hidden_dim = hidden_dim
@@ -163,6 +163,7 @@ class BinaryTreeLSTM(nn.Module):
         self.intra_attention = intra_attention
         self.gumbel_temperature = gumbel_temperature
         self.bidirectional = bidirectional
+        self.is_lstm = is_lstm
 
         assert not (self.bidirectional and not self.use_leaf_rnn)
 
@@ -221,12 +222,16 @@ class BinaryTreeLSTM(nn.Module):
         old_c_left, old_c_right = old_c[:, :-1, :], old_c[:, 1:, :]
         comp_weights = (self.comp_query * new_h).sum(-1)
         comp_weights = comp_weights / math.sqrt(self.hidden_dim)
-        if self.training:
-            select_mask = basic.st_gumbel_softmax(
-                logits=comp_weights, temperature=self.gumbel_temperature,
-                mask=mask)
+        if not self.is_lstm:
+            if self.training:
+                select_mask = basic.st_gumbel_softmax(
+                    logits=comp_weights, temperature=self.gumbel_temperature,
+                    mask=mask)
+            else:
+                select_mask = basic.greedy_select(logits=comp_weights, mask=mask)
+                select_mask = select_mask.float()
         else:
-            select_mask = basic.greedy_select(logits=comp_weights, mask=mask)
+            select_mask = F.one_hot(torch.zeros(comp_weights.size(0)).long(), comp_weights.size(1))
             select_mask = select_mask.float()
         select_mask_expand = select_mask.unsqueeze(2).expand_as(new_h)
         select_mask_cumsum = select_mask.cumsum(1)

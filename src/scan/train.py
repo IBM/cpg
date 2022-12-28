@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_length()
+    train_data, test_data = load_SCAN_simple()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train data set size: {len(train_data)}")
@@ -54,8 +54,11 @@ def train(args):
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len)
     
-    model = SCANModel(y_vocab=y_vocab, x_vocab=x_vocab,
-                     word_dim=args.word_dim, hidden_dim=args.hidden_dim,
+    model = SCANModel(model=args.model,
+                     y_vocab=y_vocab,
+                     x_vocab=x_vocab,
+                     word_dim=args.word_dim,
+                     hidden_dim=args.hidden_dim,
                      decoder_hidden_dim=args.decoder_hidden_dim,
                      decoder_num_layers=args.decoder_num_layers,
                      use_leaf_rnn=args.leaf_rnn,
@@ -187,8 +190,9 @@ def main():
     parser.add_argument('--halve-lr-every', default=2, type=int)
     parser.add_argument('--max_x_seq_len', default = 9)
     parser.add_argument('--max_y_seq_len', default = 49)
-    parser.add_argument('--data_frac', default = 1., type=float)
+    parser.add_argument('--data-frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True)
+    parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
     args = parser.parse_args()
     train(args)
 
