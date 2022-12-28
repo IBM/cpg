@@ -91,22 +91,21 @@ class TypePredictor(nn.Module):
 
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
-    def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor):
+    def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor, binary_type_predictor):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
         self.comp_linear_v = nn.Linear(in_features=2 * hidden_value_dim,
                                        out_features=5 * hidden_value_dim)
-        self.comp_linear_t = nn.Linear(in_features=4 * hidden_type_dim,
-                                       out_features=2 * hidden_type_dim)
         self.type_predictor = type_predictor
+        self.binary_type_predictor = binary_type_predictor
         self.reset_parameters()
 
     def reset_parameters(self):
         init.orthogonal_(self.comp_linear_v.weight.data)
-        init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
+        #init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
         init.constant_(self.comp_linear_v.bias.data, val=0)
-        init.constant_(self.comp_linear_t.bias.data, val=0)
+        #init.constant_(self.comp_linear_t.bias.data, val=0)
         # type predictor's parameter are not reset
 
     def forward(self, l=None, r=None):
@@ -128,35 +127,31 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         # extract value and type information
         hl_v, hl_t = torch.split(hl, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hl
-        cl_v, cl_t = torch.split(cl, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # cl
         hr_v, hr_t = torch.split(hr, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hr
-        cr_v, cr_t = torch.split(cr, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # cr
 
         # compute updated hidden state and memory values
         hlr_cat_v = torch.cat([hl_v, hr_v], dim=2)
         treelstm_vector = self.comp_linear_v(hlr_cat_v)
         i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
-        c_v = (cl_v * (fl + 1).sigmoid() + cr_v * (fr + 1).sigmoid()
+        c = (cl * (fl + 1).sigmoid() + cr * (fr + 1).sigmoid()
                + u.tanh() * i.sigmoid())
-        h_v = o.sigmoid() * c_v.tanh()
+        h_v = o.sigmoid() * c.tanh()
 
         # compute updated hidden state and memory types
-        hclr_cat_t = torch.cat([hl_t, hr_t, cl_t, cr_t], dim=2)
-        treelstm_type = self.comp_linear_t(hclr_cat_t)
-        h_t, c_t = treelstm_type.chunk(chunks=2, dim=2)
+        hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
+        _, h_t = self.binary_type_predictor(hlr_cat_t)
 
         # compute type prediction from semantic value
         _, sem_h_t = self.type_predictor(h_v)
 
         # compute homomorphic loss
         kl_loss = torch.nn.KLDivLoss()
-        hom_loss = kl_loss(F.log_softmax(h_t, dim=-1), sem_h_t)
+        hom_loss = kl_loss(h_t.log(), sem_h_t)
 
-        # concatenate value and type information for the hidden state and memory
+        # concatenate value and type information for the hidden state
         new_h = torch.cat([h_v, h_t], dim=2)
-        new_c = torch.cat([c_v, c_t], dim=2)
 
-        return (new_h, new_c), hom_loss
+        return (new_h, c), hom_loss
 
 class TypedBinaryTreeLSTM(nn.Module):
 
@@ -183,17 +178,19 @@ class TypedBinaryTreeLSTM(nn.Module):
             self.word_linear = nn.Linear(in_features=word_dim,
                                          out_features=2 * hidden_value_dim)
         self.type_predictor = TypePredictor(hidden_value_dim, [32, 32], hidden_type_dim)
+        self.binary_type_predictor = TypePredictor(2 * hidden_type_dim, [32, 32], hidden_type_dim)
         if self.bidirectional:
-            self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim, self.type_predictor)
+            self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim, self.type_predictor, self.binary_type_predictor)
             self.comp_query = nn.Parameter(torch.FloatTensor(2 * (hidden_value_dim + hidden_type_dim)))
         else:
-            self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim, self.type_predictor)
+            self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim, self.type_predictor, self.binary_type_predictor)
             self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
         self.reset_parameters()
 
     def reduce_gumbel_temp(self, iter):
-        self.type_predictor.reduce_gumbel_temp(0.003, iter, verbose=True)
+        self.type_predictor.reduce_gumbel_temp(0.0003, iter, verbose=True)
+        self.binary_type_predictor.reduce_gumbel_temp(0.0003, iter, verbose=True)
 
     def reset_parameters(self):
         if self.use_leaf_rnn:
@@ -248,9 +245,9 @@ class TypedBinaryTreeLSTM(nn.Module):
         new_h = (select_mask_expand * new_h
                  + left_mask_expand * old_h_left
                  + right_mask_expand * old_h_right)
-        new_c = (select_mask_expand * new_c
-                 + left_mask_expand * old_c_left
-                 + right_mask_expand * old_c_right)
+        new_c = (select_mask_expand[:, :, :300] * new_c
+                 + left_mask_expand[:, :, :300] * old_c_left
+                 + right_mask_expand[:, :, :300] * old_c_right)
         selected_h = (select_mask_expand * new_h).sum(1)
         return new_h, new_c, select_mask, selected_h
 
@@ -301,10 +298,9 @@ class TypedBinaryTreeLSTM(nn.Module):
             state = (hs, cs)
         else:
             state_v = self.word_linear(input)
-            h_v, c_v = state_v.chunk(chunks=2, dim=2)
+            h_v, c = state_v.chunk(chunks=2, dim=2)
             _, h_t = self.type_predictor(h_v)
             h = torch.concat((h_v, h_t), dim=2)
-            c = torch.concat((c_v, h_t), dim=2)
             state = h, c
         nodes = []
         if self.intra_attention:
