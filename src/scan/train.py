@@ -45,7 +45,7 @@ def train(args):
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len)
     
-    preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab) # from scan length test_data
+    preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
                                 shuffle=False,
@@ -55,18 +55,19 @@ def train(args):
                                 max_y_seq_len=args.max_y_seq_len)
     
     model = SCANModel(model=args.model,
-                     y_vocab=y_vocab,
-                     x_vocab=x_vocab,
-                     word_dim=args.word_dim,
-                     hidden_dim=args.hidden_dim,
-                     decoder_hidden_dim=args.decoder_hidden_dim,
-                     decoder_num_layers=args.decoder_num_layers,
-                     use_leaf_rnn=args.leaf_rnn,
-                     bidirectional=args.bidirectional,
-                     intra_attention=args.intra_attention,
-                     use_batchnorm=args.batchnorm,
-                     dropout_prob=args.dropout,
-                     max_y_seq_len=args.max_y_seq_len)
+                      y_vocab=y_vocab,
+                      x_vocab=x_vocab,
+                      word_dim=args.word_dim,
+                      hidden_value_dim=args.hidden_dim,
+                      hidden_type_dim=10,
+                      decoder_hidden_dim=args.decoder_hidden_dim,
+                      decoder_num_layers=args.decoder_num_layers,
+                      use_leaf_rnn=args.leaf_rnn,
+                      bidirectional=args.bidirectional,
+                      intra_attention=args.intra_attention,
+                      use_batchnorm=args.batchnorm,
+                      dropout_prob=args.dropout,
+                      max_y_seq_len=args.max_y_seq_len)
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -93,36 +94,41 @@ def train(args):
     valid_summary_writer = SummaryWriter(
         log_dir=os.path.join(args.save_dir, 'log', 'valid'))
 
-    def run_iter(batch, is_training):
+    def run_iter(batch, is_training, use_hom_loss=False):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
-        # FIXME: remove teacher forcing during validation
-        if args.use_teacher_forcing:
-            outputs, logits, mask = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
+        if is_training and args.use_teacher_forcing:
+            outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
         else:
-            outputs, logits, mask = model(x=batch_x, length=torch.full((B, 1), L).view(B))
+            outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B))
         
         _, N, V = logits.size()
         _, M = batch_y.size()
-        expected_padded = torch.full((B, N), y_vocab.token_to_idx('<PAD>'))
-        expected_padded[:, :M] = batch_y
-        expected_padded = expected_padded.reshape(B * N)
-        logits = logits.reshape(B * N, V)
-        outputs = outputs[:, :M]
-        outputs = outputs.reshape(B * M)
-        accuracy = torch.eq(batch_y.view(B * M), outputs).float().mean()
-        loss = criterion(input=logits, target=expected_padded)
-        # use nll loss and mask
-        #loss = F.nll_loss(logits, expected_padded, reduction='none')
-        #mask = mask.reshape(B * N)
-        #loss = (loss * mask).sum()
+        if N >= M:
+            # pad expected
+            expected_padded = torch.full((B, N), y_vocab.token_to_idx('<PAD>'))
+            expected_padded[:, :M] = batch_y
+            outputs_padded = outputs
+        else:
+            # pad outputs
+            expected_padded = batch_y
+            outputs_padded = torch.full((B, M), y_vocab.token_to_idx('<PAD>'))
+            outputs_padded[:, :N] = outputs
+        # measure accuracy
+        match = torch.eq(expected_padded, outputs_padded).float()
+        match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
+        accuracy = torch.tensor(match).mean()
+        # compute loss
+        loss = criterion(input=logits.reshape(B * N, V), target=expected_padded[:, :N].reshape(B * N))
         if is_training:
             optimizer.zero_grad()
+            if use_hom_loss:
+                hom_loss.backward(retain_graph=True)
             loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
-        return loss, accuracy
+        return loss, accuracy, hom_loss
 
     def add_scalar_summary(summary_writer, name, value, step):
         if torch.is_tensor(value):
@@ -130,22 +136,34 @@ def train(args):
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
-    validate_every = num_train_batches // 20
+    validate_every = num_train_batches // 5
     best_vaild_accuacy = 0
-    iter_count = 0
+    iter_count = 1
     for _ in range(args.max_epoch):
         for batch_iter, train_batch in enumerate(train_loader):
-            train_loss, train_accuracy = run_iter(
-                batch=train_batch, is_training=True)
+            print("\niteration:", iter_count)
+            if iter_count > 100:
+                train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
+                                                                is_training=True,
+                                                                use_hom_loss=True)
+                print("homomorphic loss: %1.4f" %hom_loss.item())
+            else:
+                train_loss, train_accuracy, _ = run_iter(batch=train_batch,
+                                                         is_training=True)
+            print("semantic loss: %1.4f" %train_loss.item())
+            print("train accuracy:", train_accuracy.item())
             iter_count += 1
             add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
             add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
+
+            if (iter_count + 1) % 100 == 0:
+                model.reduce_gumbel_temp(iter_count)
 
             if (batch_iter + 1) % validate_every == 0:
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
                 for valid_batch in valid_loader:
-                    valid_loss, valid_accuracy = run_iter(
+                    valid_loss, valid_accuracy, _ = run_iter(
                         batch=valid_batch, is_training=False)
                     valid_loss_sum += valid_loss.item()
                     valid_accuracy_sum += valid_accuracy.item()
