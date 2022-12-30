@@ -4,11 +4,8 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 from torch.nn import init
-<<<<<<< HEAD
 import torch.nn.functional as F
-=======
 from torch.nn import functional as F
->>>>>>> 3fbdd31576be1ac8d8c23e7345b8ad3f4e3f830c
 
 from . import basic
 import numpy as np
@@ -55,8 +52,9 @@ class FeedForward(nn.Module):
         super().__init__()
 
         dims = [input_dim] + hidden_dims + [output_dim]
-        self.layers = [nn.Linear(in_d, out_d)
-                       for in_d, out_d in zip(dims[:-1], dims[1:])]
+        self.layers = nn.ModuleList()
+        for in_d, out_d in zip(dims[:-1], dims[1:]):
+            self.layers.append(nn.Linear(in_d, out_d))
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
@@ -67,7 +65,7 @@ class FeedForward(nn.Module):
 
 class TypePredictor(nn.Module):
 
-    def __init__(self, repr_dim, hidden_dims, num_types, gumbel_temp=10.):
+    def __init__(self, repr_dim, hidden_dims, num_types, gumbel_temp=1.):
         super().__init__()
         self.net = FeedForward(repr_dim, hidden_dims, num_types)
         self.gumbel_temp = gumbel_temp
@@ -82,8 +80,6 @@ class TypePredictor(nn.Module):
         return self.net(x)
 
     def sample(self, type_scores):
-        B, L, T = type_scores.size()
-
         distribution = F.gumbel_softmax(type_scores, tau=self.gumbel_temp, dim=-1)
         samples = torch.argmax(distribution, dim=-1)
         return samples, distribution
@@ -153,7 +149,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         hom_loss = kl_loss(h_t.log(), sem_h_t)
 
         # concatenate value and type information for the hidden state
-        new_h = torch.cat([h_v, h_t], dim=2)
+        new_h = torch.cat([h_v, (h_t + sem_h_t) / 2], dim=2)
 
         return (new_h, c), hom_loss
 
