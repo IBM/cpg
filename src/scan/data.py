@@ -159,3 +159,36 @@ class MyDataLoader:
         X = torch.concat([torch.nn.functional.one_hot(i[0], num_classes=max_x_vocab).float() for i in self.batches], dim=0)
         Y = torch.concat([torch.nn.functional.one_hot(i[1], num_classes=max_y_vocab).float() for i in self.batches], dim=0)
         return X, Y
+
+class PrimitiveScanTypes(Enum):
+    '''
+    Type 1: Q (Quantifiers): twice, thrice
+    Type 2: A (Actions): walk, look, run, jump
+    Type 3: M (Modifiers/Adverbs): opposite, around
+    Type 4: D (Directions): left, right
+    Type 5: C (Conjunctions): and, after
+    Type 6: T (Turn): turn  (I wasn't sure if this can be clubbed in with any of the other types).
+    '''
+
+    Q = 1
+    A = 2
+    M = 3
+    D = 4
+    C = 5
+    T = 6
+
+scan_token_to_type = {
+    "twice"     : PrimitiveScanTypes.Q,
+    "thrice"    : PrimitiveScanTypes.Q,
+    "walk"      : PrimitiveScanTypes.A,
+    "look"      : PrimitiveScanTypes.A,
+    "run"       : PrimitiveScanTypes.A,
+    "jump"      : PrimitiveScanTypes.A,
+    "opposite"  : PrimitiveScanTypes.M,
+    "around"    : PrimitiveScanTypes.M,
+    "left"      : PrimitiveScanTypes.D,
+    "right"     : PrimitiveScanTypes.D,
+    "and"       : PrimitiveScanTypes.C,
+    "after" : PrimitiveScanTypes.C,
+    "turn" : PrimitiveScanTypes.T
+}
