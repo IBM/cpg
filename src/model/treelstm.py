@@ -139,17 +139,18 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         # compute updated hidden state and memory types
         hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
-        h_t_sample, h_t = self.binary_type_predictor(hlr_cat_t)
+        _, h_t = self.binary_type_predictor(hlr_cat_t)
 
         # compute type prediction from semantic value
-        sem_h_t_sample, sem_h_t = self.type_predictor(h_v)
+        _, sem_h_t = self.type_predictor(h_v)
 
         # compute homomorphic loss
         kl_loss = torch.nn.KLDivLoss()
         hom_loss = kl_loss(h_t.log(), sem_h_t)
 
         # concatenate value and type information for the hidden state
-        new_h = torch.cat([h_v, F.one_hot(h_t_sample, num_classes=self.hidden_type_dim)], dim=2)
+        new_h_type = F.one_hot(torch.argmax((h_t + sem_h_t) / 2.0, dim=-1), num_classes=self.hidden_type_dim)
+        new_h = torch.cat([h_v, new_h_type], dim=2)
 
         return (new_h, c), hom_loss
 
