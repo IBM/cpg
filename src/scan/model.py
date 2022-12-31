@@ -4,7 +4,7 @@ from torch.nn import init
 import torch.nn.functional as F
 
 from src.model.treelstm import TypedBinaryTreeLSTM
-
+from src.scan.data import scan_word_to_type
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, output_size, hidden_size, dropout_p=0.1, max_length=10, device='cpu'):
@@ -68,7 +68,7 @@ class SCANModel(nn.Module):
 
     def __init__(self, model, y_vocab, x_vocab, word_dim, hidden_value_dim, hidden_type_dim,
                  decoder_hidden_dim, decoder_num_layers, use_leaf_rnn, bidirectional,
-                 intra_attention, use_batchnorm, dropout_prob, max_y_seq_len):
+                 intra_attention, use_batchnorm, dropout_prob, max_y_seq_len, use_prim_type_oracle):
         super(SCANModel, self).__init__()
         self.model = model
         self.num_classes = len(y_vocab)
@@ -86,18 +86,27 @@ class SCANModel(nn.Module):
         self.use_batchnorm = use_batchnorm
         self.dropout_prob = dropout_prob
         self.max_y_seq_len = max_y_seq_len
-
+        self.use_prim_type_oracle = use_prim_type_oracle
         self.dropout = nn.Dropout(dropout_prob)
         self.embedding = nn.Embedding(num_embeddings=self.num_words,
                                       embedding_dim=word_dim)
+        self.scan_token_to_type_map = None
+        if self.use_prim_type_oracle:
+            self.scan_token_to_type_map = torch.zeros([len(self.x_vocab)], dtype=torch.int64)
+            types = []
+            for word in scan_word_to_type:
+                token_idx = self.x_vocab._token_to_idx[word]
+                type = scan_word_to_type[word]
+                self.scan_token_to_type_map[token_idx] = type
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
-                                      hidden_value_dim=hidden_value_dim,
-                                      hidden_type_dim=hidden_type_dim,
-                                      use_leaf_rnn=use_leaf_rnn,
-                                      intra_attention=intra_attention,
-                                      gumbel_temperature=1,
-                                      bidirectional=bidirectional,
-                                      is_lstm= model == 'lstm')
+                                           hidden_value_dim=hidden_value_dim,
+                                           hidden_type_dim=hidden_type_dim,
+                                           use_leaf_rnn=use_leaf_rnn,
+                                           intra_attention=intra_attention,
+                                           gumbel_temperature=1,
+                                           bidirectional=bidirectional,
+                                           is_lstm=model == 'lstm',
+                                           scan_token_to_type_map=self.scan_token_to_type_map)
         self.decoder = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.reset_parameters()
 
@@ -152,7 +161,7 @@ class SCANModel(nn.Module):
     def forward(self, x, length, force=None):
         x_embed = self.embedding(x)
         x_embed = self.dropout(x_embed)
-        sentence_vector, _, hom_loss = self.encoder(input=x_embed, length=length)
+        sentence_vector, _, hom_loss = self.encoder(input=x_embed, length=length, input_tokens=x)
         sentence_vector = sentence_vector[:, :self.hidden_value_dim]
         outputs, logits = self.decode(sentence_vector, self.max_y_seq_len, force)
         return outputs, logits, hom_loss

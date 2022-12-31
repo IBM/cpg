@@ -67,7 +67,8 @@ def train(args):
                       intra_attention=args.intra_attention,
                       use_batchnorm=args.batchnorm,
                       dropout_prob=args.dropout,
-                      max_y_seq_len=args.max_y_seq_len)
+                      max_y_seq_len=args.max_y_seq_len,
+                      use_prim_type_oracle=args.use_prim_type_oracle)
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -211,6 +212,7 @@ def main():
     parser.add_argument('--data-frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True)
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
+    parser.add_argument('--use-prim-type-oracle', default=False)
     args = parser.parse_args()
     train(args)
 

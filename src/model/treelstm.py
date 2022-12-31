@@ -10,7 +10,6 @@ from torch.nn import functional as F
 from . import basic
 import numpy as np
 
-
 class BinaryTreeLSTMLayer(nn.Module):
 
     def __init__(self, hidden_dim):
@@ -156,7 +155,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, is_lstm=False):
+                 gumbel_temperature, bidirectional, is_lstm=False, scan_token_to_type_map=None, input_tokens=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
         self.hidden_value_dim = hidden_value_dim
@@ -166,6 +165,8 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.gumbel_temperature = gumbel_temperature
         self.bidirectional = bidirectional
         self.is_lstm = is_lstm
+        self.scan_token_to_type_map = scan_token_to_type_map
+        self.input_tokens = input_tokens
 
         assert not (self.bidirectional and not self.use_leaf_rnn)
 
@@ -256,11 +257,12 @@ class TypedBinaryTreeLSTM(nn.Module):
         selected_h = (select_mask_expand * new_h).sum(1)
         return new_h, new_c, select_mask, selected_h
 
-    def forward(self, input, length, return_select_masks=False):
+    def forward(self, input, length, input_tokens, return_select_masks=False):
         max_depth = input.size(1)
         length_mask = basic.sequence_mask(sequence_length=length,
                                           max_length=max_depth)
         select_masks = []
+        hom_loss_sum = 0
 
         if self.use_leaf_rnn:
             hs = []
@@ -305,18 +307,21 @@ class TypedBinaryTreeLSTM(nn.Module):
             state_v = self.word_linear(input)
             h_v, c = state_v.chunk(chunks=2, dim=2)
             _, h_t = self.type_predictor(h_v)
+            if self.scan_token_to_type_map is not None:
+                # compute cross entropy loss of predicted type against the oracle
+                B, L, T = h_t.shape
+                target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
+                hom_loss_sum = F.cross_entropy(h_t.view(B*L, T), target_types)
+
             h = torch.concat((h_v, h_t), dim=2)
             state = h, c
         nodes = []
         if self.intra_attention:
             nodes.append(state[0])
-        hom_loss_sum = 0
         for i in range(max_depth - 1):
             h, c = state
             l = (h[:, :-1, :], c[:, :-1, :])
             r = (h[:, 1:, :], c[:, 1:, :])
-            # TODO: change this to apply type appropriate treelstm layers for each different pair
-            # TODO: new_state = self.apply_treelstm(l, r)
             new_state, hom_loss = self.treelstm_layer(l=l, r=r)
             hom_loss_sum += hom_loss
             if i < max_depth - 2:
