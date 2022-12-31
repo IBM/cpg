@@ -313,7 +313,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                 # compute cross entropy loss of predicted type against the oracle
                 B, L, T = h_t.shape
                 target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-                hom_loss_sum = F.cross_entropy(h_t.view(B*L, T), target_types)
+                hom_loss_sum = F.cross_entropy(h_t.view(B*L, T).log(), target_types)
 
             h = torch.concat((h_v, F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)), dim=2)
             state = h, c
