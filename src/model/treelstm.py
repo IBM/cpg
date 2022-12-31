@@ -94,7 +94,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
-        self.comp_linear_v = nn.Linear(in_features=2 * hidden_value_dim,
+        self.comp_linear_v = nn.Linear(in_features=2 * (hidden_value_dim + hidden_type_dim),
                                        out_features=5 * hidden_value_dim)
         self.type_predictor = type_predictor
         self.binary_type_predictor = binary_type_predictor
@@ -129,7 +129,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         hr_v, hr_t = torch.split(hr, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hr
 
         # compute updated hidden state and memory values
-        hlr_cat_v = torch.cat([hl_v, hr_v], dim=2)
+        # TK changed to include type information
+        hlr_cat_v = torch.cat([hl, hr], dim=2)
         treelstm_vector = self.comp_linear_v(hlr_cat_v)
         i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
         c = (cl * (fl + 1).sigmoid() + cr * (fr + 1).sigmoid()
@@ -138,17 +139,17 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         # compute updated hidden state and memory types
         hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
-        _, h_t = self.binary_type_predictor(hlr_cat_t)
+        h_t_sample, h_t = self.binary_type_predictor(hlr_cat_t)
 
         # compute type prediction from semantic value
-        _, sem_h_t = self.type_predictor(h_v)
+        sem_h_t_sample, sem_h_t = self.type_predictor(h_v)
 
         # compute homomorphic loss
         kl_loss = torch.nn.KLDivLoss()
         hom_loss = kl_loss(h_t.log(), sem_h_t)
 
         # concatenate value and type information for the hidden state
-        new_h = torch.cat([h_v, (h_t + sem_h_t) / 2], dim=2)
+        new_h = torch.cat([h_v, F.one_hot(h_t_sample, num_classes=self.hidden_type_dim)], dim=2)
 
         return (new_h, c), hom_loss
 
@@ -306,14 +307,14 @@ class TypedBinaryTreeLSTM(nn.Module):
         else:
             state_v = self.word_linear(input)
             h_v, c = state_v.chunk(chunks=2, dim=2)
-            _, h_t = self.type_predictor(h_v)
+            h_t_samples, h_t = self.type_predictor(h_v)
             if self.scan_token_to_type_map is not None:
                 # compute cross entropy loss of predicted type against the oracle
                 B, L, T = h_t.shape
                 target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
                 hom_loss_sum = F.cross_entropy(h_t.view(B*L, T), target_types)
 
-            h = torch.concat((h_v, h_t), dim=2)
+            h = torch.concat((h_v, F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)), dim=2)
             state = h, c
         nodes = []
         if self.intra_attention:
