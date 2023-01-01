@@ -18,6 +18,10 @@ SCAN_SIMPLE_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/maste
 SCAN_SIMPLE_TRAIN_FILEPATH = "./data/SCAN_simple_train.txt"
 SCAN_SIMPLE_TEST_FILEPATH = "./data/SCAN_simple_test.txt"
 
+SCAN_ADD_PRIM_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_train_addprim_jump.txt"
+SCAN_ADD_PRIM_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_test_addprim_jump.txt"
+SCAN_ADD_PRIM_TRAIN_FILEPATH = "./data/SCAN_add_prim_train.txt"
+SCAN_ADD_PRIM_TEST_FILEPATH = "./data/SCAN_add_prim_test.txt"
 
 def download_file(url, filepath, verbose=False):
     if verbose:
@@ -67,6 +71,12 @@ def load_SCAN_simple():
         download_file(SCAN_SIMPLE_TEST_URL, SCAN_SIMPLE_TEST_FILEPATH, verbose=True)
     return load_SCAN(SCAN_SIMPLE_TRAIN_FILEPATH, SCAN_SIMPLE_TEST_FILEPATH)
 
+def load_SCAN_add_prim():
+    if not os.path.exists(SCAN_ADD_PRIM_TRAIN_FILEPATH):
+        download_file(SCAN_ADD_PRIM_TRAIN_URL, SCAN_ADD_PRIM_TRAIN_FILEPATH, verbose=True)
+    if not os.path.exists(SCAN_ADD_PRIM_TEST_FILEPATH):
+        download_file(SCAN_ADD_PRIM_TEST_URL, SCAN_ADD_PRIM_TEST_FILEPATH, verbose=True)
+    return load_SCAN(SCAN_ADD_PRIM_TRAIN_FILEPATH, SCAN_ADD_PRIM_TEST_FILEPATH)
 
 @dataclass
 class Vocabulary:
