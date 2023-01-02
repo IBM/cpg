@@ -13,7 +13,7 @@ from torch.nn import functional as F
 
 from src.scan.model import SCANModel
 
-from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader
+from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim
 
 
 logging.basicConfig(level=logging.INFO,
@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_simple()
+    train_data, test_data = load_SCAN_add_prim()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train data set size: {len(train_data)}")
