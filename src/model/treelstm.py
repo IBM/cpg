@@ -229,6 +229,14 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         d_enc = self.encoder(d_cat_sample)[1].squeeze(0).view(B, L, self.hidden_value_dim)
 
         # decode the decoding template (a function specification):
+        # of the form s1, s2, ..., sk where each si is either a target
+        # vocabulary element or the index of an element of the (concatenated)
+        # input pair.  This template is interpreted to produce the output
+        # (either a target element or the indexed element from the input).
+        # like a pointer network.
+        # should be much easier for it to learn to do the syntactic operations
+        # (on sequences) like `opposite`, `twice`, `thrice` etc.
+
         # flatten the first two dimensions for the decoder -> B*L x H
         d_enc = torch.flatten(d_enc, start_dim=0, end_dim=1)
 
