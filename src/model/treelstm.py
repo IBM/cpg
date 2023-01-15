@@ -131,11 +131,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         B, L, M = dt.size()
         s0 = self.decoder.vocab._token_to_idx("_0")
         dt_flat = dt.flatten()
-        dt_slot_idx = torch.nonzero(dt_flat >= s0)
+        dt_slot_idx = torch.nonzero(dt_flat >= s0)F
         # TODO: assumes tokens have consecutive values starting from s0
-        slot_tokens = dt_flat[dt_slot_idx] - s0
+        slot_idx = dt_flat[dt_slot_idx] - s0
         input_cat_flat = torch.flatten(input_cat, start_dim=0, end_dim=1)
-        slot_values = input_cat_flat[:, input_cat_flat]
+        slot_values = input_cat_flat[:, slot_idx]
         dt_flat[dt_slot_idx] = slot_values
 
         return dt_flat.view(B, L, M)
