@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-from random import randint
 
 from tensorboardX import SummaryWriter
 
@@ -14,17 +13,22 @@ from torch.nn import functional as F
 
 from src.scan.model import SCANModel
 
-from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim
+from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, \
+    load_SCAN_add_jump_0, load_SCAN_add_jump_4, load_TK_simple
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 
+# DEBUG TK
+#torch.autograd.set_detect_anomaly(True)
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_add_prim()
+    train_data, test_data = load_TK_simple()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
+    valid_size = int(len(train_data) * args.data_frac)
+    test_data = test_data[:valid_size]
     logging.info(f"Train data set size: {len(train_data)}")
     logging.info(f"Train data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
     logging.info(f"Test data set size: {len(test_data)}")
@@ -36,36 +40,16 @@ def train(args):
     logging.info(f"X Vocab size: {len(x_vocab)}")
     logging.info(f"Y Vocab size: {len(y_vocab)}")
 
-    def select(x, curriculum_stage):
-        if curriculum_stage < 4:
-            if "and" in x[0] or "after" in x[0]:
-                return False
-        if curriculum_stage < 3:
-            if "twice" in x[0] or "thrice" in x[0]:
-                return False
-        if curriculum_stage < 2:
-            if "opposite" in x[0] or "around" in x[0]:
-                return False
-        if curriculum_stage < 1:
-            if "turn" in x[0]:
-                return False
-        return True
-
-    if args.use_curriculum:
-        curriculum_stage = 0
-        train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
-        print(train_data_curriculum)
-        preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
-    else:
-        preprocessed_train_data = preprocess(train_data, x_vocab, y_vocab)
+    preprocessed_train_data = preprocess(train_data, x_vocab, y_vocab)
     train_loader = MyDataLoader(preprocessed_train_data,
                                 batch_size=args.batch_size,
                                 shuffle=False,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
-                                max_y_seq_len=args.max_y_seq_len)
-
+                                max_y_seq_len=args.max_y_seq_len,
+                                sort_by_len=args.sort_by_len)
+    
     preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
@@ -73,7 +57,8 @@ def train(args):
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
-                                max_y_seq_len=args.max_y_seq_len)
+                                max_y_seq_len=args.max_y_seq_len,
+                                sort_by_len=args.sort_by_len)
     
     model = SCANModel(model=args.model,
                       y_vocab=y_vocab,
@@ -116,24 +101,15 @@ def train(args):
     valid_summary_writer = SummaryWriter(
         log_dir=os.path.join(args.save_dir, 'log', 'valid'))
 
-    def run_iter(batch, is_training=False, use_hom_loss=False, verbose=False):
+    def run_iter(batch, is_training, use_hom_loss=False):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
         if is_training and args.use_teacher_forcing:
-            outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
+            outputs, logits, decodings, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
         else:
-            outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B))
-        if verbose:
-            input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
-            expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
-            decoded = y_vocab.decode_batch(outputs.numpy(), outputs != y_vocab.token_to_idx('<PAD>'))
-            print("--------------------------------")
-            for i in range(B):
-                print("input: ", ", ".join(input[i]), "\n")
-                print("expected: ", ", ".join(expected[i]), "\n")
-                print("decoded: ", ", ".join(decoded[i]))
-                print("--------------------------------")
+            outputs, logits, decodings, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B))
+        
         _, N, V = logits.size()
         _, M = batch_y.size()
         if N >= M:
@@ -146,6 +122,10 @@ def train(args):
             expected_padded = batch_y
             outputs_padded = torch.full((B, M), y_vocab.token_to_idx('<PAD>'))
             outputs_padded[:, :N] = outputs
+        # TK DEBUG
+        print("expected: ", expected_padded)
+        print("outputs: ", outputs_padded)
+
         # measure accuracy
         match = torch.eq(expected_padded, outputs_padded).float()
         match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
@@ -167,24 +147,12 @@ def train(args):
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
-    validate_every = 200
-    best_vaild_accuacy = 0
+    #validate_every = num_train_batches // 5
+    # TK DEBUG
+    validate_every = 2  # epochs
+    best_valid_accuracy = 0
     iter_count = 1
-    train_accuracy_epoch = 0
-    for _ in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_epoch > 0.99:
-            curriculum_stage += 1
-            train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
-            print(train_data_curriculum)
-            preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
-            train_loader = MyDataLoader(preprocessed_train_data,
-                                        batch_size=args.batch_size,
-                                        shuffle=False,
-                                        x_pad_idx=x_vocab.token_to_idx('<PAD>'),
-                                        y_pad_idx=y_vocab.token_to_idx('<PAD>'),
-                                        max_x_seq_len=args.max_x_seq_len,
-                                        max_y_seq_len=args.max_y_seq_len)
-        train_accuracy_epoch = 0
+    for epoch in range(args.max_epoch):
         for batch_iter, train_batch in enumerate(train_loader):
             print("\niteration:", iter_count)
             if iter_count > -1:
@@ -195,9 +163,8 @@ def train(args):
             else:
                 train_loss, train_accuracy, _ = run_iter(batch=train_batch,
                                                          is_training=True)
-            train_accuracy_epoch += train_accuracy / num_train_batches
             print("semantic loss: %1.4f" %train_loss.item())
-            print("train accuracy: %1.4f" %train_accuracy.item())
+            print("train accuracy:", train_accuracy.item())
             iter_count += 1
             add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
             add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
@@ -205,33 +172,32 @@ def train(args):
             if (iter_count + 1) % 500 == 0:
                 model.reduce_gumbel_temp(iter_count)
 
-            if (batch_iter + 1) % validate_every == 0:
-                valid_loss_sum = valid_accuracy_sum = 0
-                num_valid_batches = valid_loader.num_batches
-                k = randint(0, num_valid_batches - 1)
-                for i, valid_batch in enumerate(valid_loader):
-                    if args.print_in_valid and i == k:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
-                                                                 verbose=True)
-                    else:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch)
-                    valid_loss_sum += valid_loss.item()
-                    valid_accuracy_sum += valid_accuracy.item()
-                valid_loss = valid_loss_sum / num_valid_batches
-                valid_accuracy = valid_accuracy_sum / num_valid_batches
-                add_scalar_summary(summary_writer=valid_summary_writer, name='loss', value=valid_loss, step=iter_count)
-                add_scalar_summary(summary_writer=valid_summary_writer, name='accuracy', value=valid_accuracy, step=iter_count)
-                scheduler.step(valid_accuracy)
-                progress = iter_count / train_loader.num_batches
-                logging.info(f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
-                if valid_accuracy > best_vaild_accuacy:
-                    best_vaild_accuacy = valid_accuracy
-                    model_filename = (f'model-{progress:.2f}'
-                                    f'-{valid_loss:.4f}'
-                                    f'-{valid_accuracy:.4f}.pkl')
-                    model_path = os.path.join(args.save_dir, model_filename)
-                    torch.save(model.state_dict(), model_path)
-                    print(f'Saved the new best model to {model_path}')
+        # TK DEBUG
+        # if epoch == 5:
+        #     pass
+        if validate_every != 0 and (epoch + 1) % validate_every == 0:
+            valid_loss_sum = valid_accuracy_sum = 0
+            num_valid_batches = valid_loader.num_batches
+            for valid_batch in valid_loader:
+                valid_loss, valid_accuracy, _ = run_iter(
+                    batch=valid_batch, is_training=False)
+                valid_loss_sum += valid_loss.item()
+                valid_accuracy_sum += valid_accuracy.item()
+            valid_loss = valid_loss_sum / num_valid_batches
+            valid_accuracy = valid_accuracy_sum / num_valid_batches
+            add_scalar_summary(summary_writer=valid_summary_writer, name='loss', value=valid_loss, step=iter_count)
+            add_scalar_summary(summary_writer=valid_summary_writer, name='accuracy', value=valid_accuracy, step=iter_count)
+            scheduler.step(valid_accuracy)
+            progress = iter_count / train_loader.num_batches
+            logging.info(f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
+            if valid_accuracy > best_valid_accuracy:
+                best_valid_accuracy = valid_accuracy
+                model_filename = (f'model-{progress:.2f}'
+                                f'-{valid_loss:.4f}'
+                                f'-{valid_accuracy:.4f}.pkl')
+                model_path = os.path.join(args.save_dir, model_filename)
+                torch.save(model.state_dict(), model_path)
+                print(f'Saved the new best model to {model_path}')
 
 
 def main():
@@ -256,14 +222,13 @@ def main():
     parser.add_argument('--optimizer', default='adam')
     parser.add_argument('--fine-grained', default=False, action='store_true')
     parser.add_argument('--halve-lr-every', default=2, type=int)
-    parser.add_argument('--max_x_seq_len', default = 9)
-    parser.add_argument('--max_y_seq_len', default = 49)
+    parser.add_argument('--max_x_seq_len', default = 3)
+    parser.add_argument('--max_y_seq_len', default = 3)
     parser.add_argument('--data-frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True)
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
     parser.add_argument('--use-prim-type-oracle', default=False)
-    parser.add_argument('--print-in-valid', default=False)
-    parser.add_argument('--use-curriculum', default=False)
+    parser.add_argument('--sort-by-len', default=False)
     args = parser.parse_args()
     train(args)
 
