@@ -177,7 +177,7 @@ class SCANModel(nn.Module):
         x_embed = self.dropout(x_embed)
         sentence_vector, _, decoding_x, hom_loss = self.encoder(input=x_embed, length=length, input_tokens=x)
         # TK DEBUG
-        print("decoding: ", decoding_x)
+        # print("decoding: ", decoding_x)
         sentence_vector = sentence_vector[:, :self.hidden_value_dim]
         # encode the x vocab decoding
         enc_x = self.lstm_encoder(decoding_x)[1][0].squeeze(0)

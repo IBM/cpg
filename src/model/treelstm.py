@@ -128,19 +128,27 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
     def apply_decoder_template(self, dt, input_cat):
         # find the locations of the slots in the template:
-        B, L, M = dt.size()
+        # dt - B x L x M x V
+        # input_cat - B x L x 2M x V
+        B, L, M, V = dt.size()
         s0 = self.decoder.vocab.token_to_idx("_0")
-        dt_flat = dt.flatten()
-        dt_slot_idx = torch.nonzero(dt_flat >= s0).squeeze(1)
+        dt_sample = torch.argmax(dt, dim=-1).squeeze(-1)
+        dt_sample_flat = dt_sample.flatten()
+        dt_slot_idx = torch.nonzero(dt_sample_flat >= s0).squeeze(1)
         if dt_slot_idx.sum() == 0:
             return dt
         # TODO: assumes tokens have consecutive values starting from s0
-        slot_idx = dt_flat[dt_slot_idx] - s0
-        input_cat_flat = input_cat.argmax(-1).squeeze(1).flatten()
-        slot_values = input_cat_flat[slot_idx]
-        dt_flat[dt_slot_idx] = slot_values
+        slot_idx = dt_sample_flat[dt_slot_idx] - s0
+        # input_cat_sample = input_cat.argmax(-1).squeeze(-1)
+        # input_cat_flat = input_cat_sample.flatten()
+        slot_values = input_cat.view(B*L*2*M, V)[slot_idx, :].float()
+        result = torch.clone(dt).view(B*L*M, V)
+        result[dt_slot_idx, :] = slot_values
+        result = result.view(B, L, M, V)
 
-        return dt_flat.view(B, L, M)
+        return result
+
+        return dt_sample_flat.view(B, L, M)
 
     def forward(self, l=None, r=None):
         """
@@ -246,11 +254,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # last dimension holds logits
         dt = self.decoder.decode(d_enc, self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
 
-        # sample from it -> B x L x M
-        dt_sample = torch.argmax(dt, dim=-1).squeeze(-1)
+        # # sample from it -> B x L x M
+        # dt_sample = torch.argmax(dt, dim=-1).squeeze(-1)
 
         # apply decoder template to create the decoding (substituting input values for slots)
-        new_d = self.apply_decoder_template(dt_sample, d_cat_sample)
+        new_d = self.apply_decoder_template(dt, d_cat)
 
         # homomorphic alignment:
         #
@@ -264,7 +272,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                              num_classes=new_d.size(-1))
 
         # TK DEBUG
-        print("new_d: ", dec_comp)
+        #print("new_d: ", dec_comp)
 
         hom_loss = abstraction_hom_loss + decoding_hom_loss
 
