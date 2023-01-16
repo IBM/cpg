@@ -102,7 +102,9 @@ class Decoder(nn.Module):
                 else:
                     break  # break if all sequences have reached '<EOS>'
 
-        return decoded[:, :t + 1], logits[:, :t + 1, :]
+        # TK DEBUG
+        # return decoded[:, :t + 1], logits[:, :t + 1, :]
+        return decoded, logits
 
 
 class SCANModel(nn.Module):

@@ -129,13 +129,15 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
     def apply_decoder_template(self, dt, input_cat):
         # find the locations of the slots in the template:
         B, L, M = dt.size()
-        s0 = self.decoder.vocab._token_to_idx("_0")
+        s0 = self.decoder.vocab.token_to_idx("_0")
         dt_flat = dt.flatten()
-        dt_slot_idx = torch.nonzero(dt_flat >= s0)
+        dt_slot_idx = torch.nonzero(dt_flat >= s0).squeeze(1)
+        if dt_slot_idx.sum() == 0:
+            return dt
         # TODO: assumes tokens have consecutive values starting from s0
         slot_idx = dt_flat[dt_slot_idx] - s0
-        input_cat_flat = torch.flatten(input_cat, start_dim=0, end_dim=1)
-        slot_values = input_cat_flat[:, slot_idx]
+        input_cat_flat = input_cat.argmax(-1).squeeze(1).flatten()
+        slot_values = input_cat_flat[slot_idx]
         dt_flat[dt_slot_idx] = slot_values
 
         return dt_flat.view(B, L, M)
@@ -225,6 +227,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # encode the concatenated input decodings -> B x L x H (hidden)
         d_enc = self.encoder(d_cat_sample)[1].squeeze(0).view(B, L, self.hidden_value_dim)
 
+        # unflatten batch and length on input sample
+        d_cat_sample = d_cat_sample.view(B, L, 2*self.max_seq_len, vocab_size)
+
         # decode the decoding template (a function specification):
         # of the form s1, s2, ..., sk where each si is either a target
         # vocabulary element or the index of an element of the (concatenated)
@@ -242,7 +247,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         dt = self.decoder.decode(d_enc, self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
 
         # sample from it -> B x L x M
-        dt_sample = torch.argmax(dt, dim=-1)
+        dt_sample = torch.argmax(dt, dim=-1).squeeze(-1)
 
         # apply decoder template to create the decoding (substituting input values for slots)
         new_d = self.apply_decoder_template(dt_sample, d_cat_sample)
