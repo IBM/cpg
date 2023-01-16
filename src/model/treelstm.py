@@ -459,7 +459,6 @@ class TypedBinaryTreeLSTM(nn.Module):
             state_v = self.word_linear(input)
             h_v, c = state_v.chunk(chunks=2, dim=2)
             h_t_samples, h_t = self.type_predictor(h_v)
-            B, L, T = h_v.size()
 
             # decode each word separately ((B*L), max_seq_len, target vocab size)
             # reshape to B x L x max_seq_len x len(decoder.vocab)
