@@ -50,7 +50,6 @@ class Decoder(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-
         self.embedding = nn.Embedding(vocab.size(), input_dim)
         self.gru = nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_dim, vocab.size())
@@ -157,8 +156,7 @@ class SCANModel(nn.Module):
                                            gumbel_temperature=1,
                                            bidirectional=bidirectional,
                                            max_seq_len=self.max_y_seq_len,
-                                           decoder=Decoder(x_vocab, decoder_hidden_dim,
-                                                           decoder_hidden_dim, decoder_num_layers),
+                                           decoder=self.decoder_x,
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)

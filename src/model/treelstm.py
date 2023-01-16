@@ -131,7 +131,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         B, L, M = dt.size()
         s0 = self.decoder.vocab._token_to_idx("_0")
         dt_flat = dt.flatten()
-        dt_slot_idx = torch.nonzero(dt_flat >= s0)F
+        dt_slot_idx = torch.nonzero(dt_flat >= s0)
         # TODO: assumes tokens have consecutive values starting from s0
         slot_idx = dt_flat[dt_slot_idx] - s0
         input_cat_flat = torch.flatten(input_cat, start_dim=0, end_dim=1)
@@ -219,11 +219,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         # represent in 1-hot: (BxL) x 2*max_seq_len x vocab size
         vocab_size = len(self.decoder.vocab)
-        d_cat_sample = F.one_hot(d_cat_sample, num_classes=vocab_size)
-
-        # flatten the batch and length dimensions for the encoder (set to batch first)
-        # -> (B*L) x 2M x V
-        d_cat_sample = torch.flatten(d_cat_sample, start_dim=0, end_dim=1).float()
+        d_cat_sample = F.one_hot(d_cat_sample.flatten(),
+                                 num_classes=vocab_size).view(B*L, 2*self.max_seq_len, vocab_size).float()
         
         # encode the concatenated input decodings -> B x L x H (hidden)
         d_enc = self.encoder(d_cat_sample)[1].squeeze(0).view(B, L, self.hidden_value_dim)
