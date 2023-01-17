@@ -88,12 +88,14 @@ class TypePredictor(nn.Module):
         return self.net(x)
 
     def sample(self, type_scores):
-        distribution = F.gumbel_softmax(type_scores, tau=self.gumbel_temp, dim=-1)
+        # distribution = F.gumbel_softmax(type_scores, tau=self.gumbel_temp, dim=-1)
+        distribution = F.softmax(type_scores, dim=-1)
         samples = torch.argmax(distribution, dim=-1)
         return samples, distribution
 
     def forward(self, x):
         type_scores = self.score(x)
+        # TK DEBUG
         samples, distribution = self.sample(type_scores)
         return samples, distribution
 
@@ -134,7 +136,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # input_cat - B x L x 2M x V
         B, L, M, V = dt.size()
         s0 = self.decoder_dec.vocab.token_to_idx("_0")
-        dt_sample_flat = dt_sample.flatten()
+        dt_sample_flat = dt_sample.argmax(-1).flatten()
         dt_slot_idx = torch.nonzero(dt_sample_flat >= s0).squeeze(1)
         if dt_slot_idx.sum() == 0:
             return dt
@@ -149,8 +151,6 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         return result
 
-        return dt_sample_flat.view(B, L, M)
-
     def forward(self, l=None, r=None):
         """
         Args:
@@ -163,7 +163,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         Returns:
             h, c, d, hom_loss: [0, 1] The hidden and cell state of the composed parent,
                 each of which has the size (batch_size, max_length - 1, hidden_value_dim + hidden_type_dim);
-               [3] the decoding of that parent into the output vocabulary y_vocab (batch_size, max_seq_len, y_vocab size);
+               [3] the decoding of that parent into the output vocabulary (batch_size, max_seq_len, vocab size);
                 and [4] the homomorphic loss.  The homomorphic loss is the sum of the losses for the abstraction
                homomorphism and the decoding homomorphism.
         """
@@ -215,7 +215,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         abstraction_hom_loss = kl_loss(torch.log_softmax(h_t, dim=-1), torch.softmax(sem_h_t, dim=-1))
 
         # compute output type
-        new_h_type = F.gumbel_softmax((h_t + sem_h_t) / 2.0, tau=self.gumbel_temperature, dim=-1, hard=True)
+        # TK: DEBUG
+        # new_h_type = F.gumbel_softmax((h_t + sem_h_t) / 2.0, tau=self.gumbel_temperature, dim=-1, hard=True)
+        new_h_type = (h_t + sem_h_t) / 2.0
 
         # compute output hidden state
         new_h = torch.cat([h_gated_v, new_h_type], dim=2)
@@ -269,8 +271,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         # compute homomorphic loss for decoding:
         decoding_hom_loss = kl_loss(torch.log_softmax(new_d, dim=-1), torch.softmax(dec_comp, dim=-1))
+        # TK DEBUG -- logits
         decoding = (dec_comp + new_d) / 2.0
-        decoding = F.gumbel_softmax(decoding, dim=-1, tau=self.gumbel_temperature, hard=True).float()
+        # decoding = F.gumbel_softmax(decoding, dim=-1, tau=self.gumbel_temperature, hard=True).float()
 
         # TK DEBUG
         #print("new_d: ", dec_comp)
@@ -490,8 +493,10 @@ class TypedBinaryTreeLSTM(nn.Module):
                 target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
                 hom_loss_sum = F.nll_loss(torch.log_softmax(h_t, dim=-1).view(B*L, T_t), target_types)
 
-            new_types = F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)
-            h = torch.concat((h_v, new_types), dim=2)
+            # TK DEBUG
+            # new_types = F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)
+            # h = torch.concat((h_v, new_types), dim=2)
+            h = torch.concat((h_v, h_t), dim=2)
             state = h, c, initial_decodings
         nodes = []
         if self.intra_attention:

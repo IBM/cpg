@@ -123,8 +123,18 @@ def train(args):
             outputs_padded = torch.full((B, M), y_vocab.token_to_idx('<PAD>'))
             outputs_padded[:, :N] = outputs
         # TK DEBUG
-        print("expected: ", expected_padded)
-        print("outputs: ", outputs_padded)
+        print("expected: ")
+        for i in range(1):
+            for j in range(expected_padded.size(1)):
+               print(y_vocab.idx_to_token(int(expected_padded[i, j])), end=' ')
+            print("\n")
+        print("\n")
+        print("outputs: ")
+        for i in range(1):
+            for j in range(outputs_padded.size(1)):
+                print(y_vocab.idx_to_token(int(outputs_padded[i, j])), end=' ')
+            print("\n")
+        print("\n")
 
         # measure accuracy
         match = torch.eq(expected_padded, outputs_padded).float()
