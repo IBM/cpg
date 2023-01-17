@@ -80,11 +80,11 @@ class Decoder(nn.Module):
 
             outputs, hidden = self.forward(inputs, hidden)
 
-            decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+            #decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
             # TK -- changed from argmax
-            # probs = torch.exp(outputs)
-            # decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
-            # decoded[unf_idxs, t] = decoded_idxs
+            probs = torch.exp(outputs)
+            decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
+            decoded[unf_idxs, t] = decoded_idxs
 
             logits[unf_idxs, t, :] = outputs  # save logits for loss computation
 
@@ -144,12 +144,13 @@ class SCANModel(nn.Module):
                 type = scan_word_to_type[word]
                 self.scan_token_to_type_map[token_idx] = type
         # x to y decoder
-        self.decoder = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
 
         # x to x decoder
         # add max_seq_len slots to x vocab.  The slots are named "_0", "_1", ..., "_k" for k=max seq len
         [x_vocab.add_token("_" + str(i)) for i in range(self.max_y_seq_len)]
-        self.decoder_x = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.decoder_sem = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.decoder_dec = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
                                            hidden_value_dim=hidden_value_dim,
                                            hidden_type_dim=hidden_type_dim,
@@ -158,7 +159,8 @@ class SCANModel(nn.Module):
                                            gumbel_temperature=1,
                                            bidirectional=bidirectional,
                                            max_seq_len=self.max_y_seq_len,
-                                           decoder=self.decoder_x,
+                                           decoder_sem=self.decoder_sem,
+                                           decoder_dec=self.decoder_dec,
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
@@ -181,5 +183,5 @@ class SCANModel(nn.Module):
         sentence_vector = sentence_vector[:, :self.hidden_value_dim]
         # encode the x vocab decoding
         enc_x = self.lstm_encoder(decoding_x)[1][0].squeeze(0)
-        outputs, logits = self.decoder.decode(enc_x, self.max_y_seq_len, force)
+        outputs, logits = self.decoder_target.decode(enc_x, self.max_y_seq_len, force)
         return outputs, logits, decoding_x, hom_loss

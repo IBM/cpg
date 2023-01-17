@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_TK_simple()
+    train_data, test_data = load_SCAN_add_jump_4()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     valid_size = int(len(train_data) * args.data_frac)
@@ -172,9 +172,10 @@ def train(args):
             if (iter_count + 1) % 500 == 0:
                 model.reduce_gumbel_temp(iter_count)
 
-        # TK DEBUG
-        # if epoch == 5:
-        #     pass
+            # TK DEBUG
+            if iter_count >= 100:
+                pass
+
         if validate_every != 0 and (epoch + 1) % validate_every == 0:
             valid_loss_sum = valid_accuracy_sum = 0
             num_valid_batches = valid_loader.num_batches
