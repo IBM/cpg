@@ -140,7 +140,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         mask = dt_sample >= s0
         idx = mask.long().nonzero().squeeze(1)
         result = dt.clone().view(B*L, M, V)
-        input_cat_sample = input_cat.argmax(-1).view(B*L, 2*M)
+        # input_cat_sample = input_cat.argmax(-1).view(B*L, 2*M)
         x_idx = dt_sample[idx[:, 0], idx[:, 1]] - s0
         result[idx[:, 0], idx[:, 1], :] = input_cat.view(B*L, 2*M, V)[idx[:, 0], x_idx, :]
 
@@ -468,8 +468,9 @@ class TypedBinaryTreeLSTM(nn.Module):
             # reshape to B x L x max_seq_len x len(decoder.vocab)
             target_vocab_size = len(self.decoder_sem.vocab)     # includes max seq len slots variables "_i"
             B, L = input_tokens.size()
-            initial_decodings = torch.zeros(B, L, self.max_seq_len, dtype=torch.int64)
-            initial_decodings = F.one_hot(initial_decodings.view(B*L*self.max_seq_len),
+            initial_decodings = torch.zeros(B, L, self.max_seq_len)
+            initial_decodings[:, :, 0] = input_tokens
+            initial_decodings = F.one_hot(initial_decodings.view(B*L*self.max_seq_len).long(),
                                           num_classes=target_vocab_size).view(B, L,
                                                                               self.max_seq_len,
                                                                               target_vocab_size)

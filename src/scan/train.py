@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_add_jump_4()
+    train_data, test_data = load_TK_simple()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     valid_size = int(len(train_data) * args.data_frac)
@@ -43,7 +43,7 @@ def train(args):
     preprocessed_train_data = preprocess(train_data, x_vocab, y_vocab)
     train_loader = MyDataLoader(preprocessed_train_data,
                                 batch_size=args.batch_size,
-                                shuffle=False,
+                                shuffle=True,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
@@ -54,7 +54,7 @@ def train(args):
     preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
-                                shuffle=False,
+                                shuffle=True,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
@@ -126,13 +126,13 @@ def train(args):
             outputs_padded[:, :N] = outputs
         # TK DEBUG
         print("expected: ")
-        for i in range(1):
+        for i in range(expected_padded.size(0)):
             for j in range(expected_padded.size(1)):
                print(y_vocab.idx_to_token(int(expected_padded[i, j])), end=' ')
             print("\n")
         print("\n")
         print("outputs: ")
-        for i in range(1):
+        for i in range(outputs_padded.size(0)):
             for j in range(outputs_padded.size(1)):
                 print(y_vocab.idx_to_token(int(outputs_padded[i, j])), end=' ')
             print("\n")
@@ -159,9 +159,9 @@ def train(args):
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
-    #validate_every = num_train_batches // 5
+    # validate_every = num_train_batches // 5
     # TK DEBUG
-    validate_every = 2  # epochs
+    validate_every = 500
     best_valid_accuracy = 0
     iter_count = 1
     for epoch in range(args.max_epoch):
@@ -173,7 +173,7 @@ def train(args):
                                                                 use_hom_loss=True)
                 print("homomorphic loss: %1.4f" %hom_loss.item())
             else:
-                train_loss, train_accuracy, _ = run_iter(batch=train_batch,
+                train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
                                                          is_training=True)
             print("semantic loss: %1.4f" %train_loss.item())
             print("train accuracy:", train_accuracy.item())
@@ -184,10 +184,6 @@ def train(args):
             if (iter_count + 1) % 500 == 0:
                 model.reduce_gumbel_temp(iter_count)
 
-            # TK DEBUG
-            if iter_count >= 100:
-                pass
-
         if validate_every != 0 and (epoch + 1) % validate_every == 0:
             valid_loss_sum = valid_accuracy_sum = 0
             num_valid_batches = valid_loader.num_batches
@@ -196,12 +192,12 @@ def train(args):
                     batch=valid_batch, is_training=False)
                 valid_loss_sum += valid_loss.item()
                 valid_accuracy_sum += valid_accuracy.item()
-            valid_loss = valid_loss_sum / num_valid_batches
-            valid_accuracy = valid_accuracy_sum / num_valid_batches
+            valid_loss = (valid_loss_sum / num_valid_batches) if num_valid_batches !=0 else 1e6   # TK DEBUG
+            valid_accuracy = (valid_accuracy_sum / num_valid_batches) if num_valid_batches !=0 else 0.0 # TK DEBUG
             add_scalar_summary(summary_writer=valid_summary_writer, name='loss', value=valid_loss, step=iter_count)
             add_scalar_summary(summary_writer=valid_summary_writer, name='accuracy', value=valid_accuracy, step=iter_count)
             scheduler.step(valid_accuracy)
-            progress = iter_count / train_loader.num_batches
+            progress = (iter_count / train_loader.num_batches) if train_loader.num_batches !=0 else 0.0
             logging.info(f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
             if valid_accuracy > best_valid_accuracy:
                 best_valid_accuracy = valid_accuracy
@@ -235,8 +231,8 @@ def main():
     parser.add_argument('--optimizer', default='adam')
     parser.add_argument('--fine-grained', default=False, action='store_true')
     parser.add_argument('--halve-lr-every', default=2, type=int)
-    parser.add_argument('--max_x_seq_len', default=6)
-    parser.add_argument('--max_y_seq_len', default=6)
+    parser.add_argument('--max_x_seq_len', default=5)
+    parser.add_argument('--max_y_seq_len', default=5)
     parser.add_argument('--data-frac', default = 1., type=float)
     parser.add_argument('--max-sentence-len', default = torch.inf, type=int)
     parser.add_argument('--use_teacher_forcing', default=True)
