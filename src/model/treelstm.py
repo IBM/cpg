@@ -136,20 +136,15 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # input_cat - B x L x 2M x V
         B, L, M, V = dt.size()
         s0 = self.decoder_dec.vocab.token_to_idx("_0")
-        dt_sample_flat = dt_sample.argmax(-1).flatten()
-        dt_slot_idx = torch.nonzero(dt_sample_flat >= s0).squeeze(1)
-        if dt_slot_idx.sum() == 0:
-            return dt
-        # TODO: assumes tokens have consecutive values starting from s0
-        slot_idx = dt_sample_flat[dt_slot_idx] - s0
-        # input_cat_sample = input_cat.argmax(-1).squeeze(-1)
-        # input_cat_flat = input_cat_sample.flatten()
-        slot_values = input_cat.view(B*L*2*M, V)[slot_idx, :].float()
-        result = torch.clone(dt).view(B*L*M, V)
-        result[dt_slot_idx, :] = slot_values
-        result = result.view(B, L, M, V)
+        dt_sample = dt_sample.argmax(-1).view(B*L, M)    # B x L x 2M
+        mask = dt_sample >= s0
+        idx = mask.long().nonzero().squeeze(1)
+        result = dt.clone().view(B*L, M, V)
+        input_cat_sample = input_cat.argmax(-1).view(B*L, 2*M)
+        x_idx = dt_sample[idx[:, 0], idx[:, 1]] - s0
+        result[idx[:, 0], idx[:, 1], :] = input_cat.view(B*L, 2*M, V)[idx[:, 0], x_idx, :]
 
-        return result
+        return result.view(B, L, M, V)
 
     def forward(self, l=None, r=None):
         """
@@ -212,7 +207,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 
         # compute abstract homomorphic loss
         kl_loss = torch.nn.KLDivLoss(reduction="batchmean")
-        abstraction_hom_loss = kl_loss(torch.log_softmax(h_t, dim=-1), torch.softmax(sem_h_t, dim=-1))
+        abstraction_hom_loss = kl_loss(h_t.log(), sem_h_t)
 
         # compute output type
         # TK: DEBUG
@@ -491,7 +486,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                 # compute cross entropy loss of predicted type against the oracle
                 T_t = h_t.shape[2]
                 target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-                hom_loss_sum = F.nll_loss(torch.log_softmax(h_t, dim=-1).view(B*L, T_t), target_types)
+                hom_loss_sum = F.nll_loss(h_t.log().view(B*L, T_t), target_types)
 
             # TK DEBUG
             # new_types = F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)

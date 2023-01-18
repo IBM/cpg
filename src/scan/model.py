@@ -147,8 +147,8 @@ class SCANModel(nn.Module):
         self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
 
         # x to x decoder
-        # add max_seq_len slots to x vocab.  The slots are named "_0", "_1", ..., "_k" for k=max seq len
-        [x_vocab.add_token("_" + str(i)) for i in range(self.max_y_seq_len)]
+        # add max_seq_len slots to x vocab.  The slots are named "_0", "_1", ..., "_k" for k=2*max seq len
+        [x_vocab.add_token("_" + str(i)) for i in range(2*self.max_y_seq_len)]
         self.decoder_sem = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.decoder_dec = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
