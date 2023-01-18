@@ -163,17 +163,22 @@ def preprocess(data, x_vocab, y_vocab):
 
 
 class MyDataLoader:
-    def __init__(self, data, batch_size, shuffle=True, sort_by_len=False, x_pad_idx=0, y_pad_idx=0, max_x_seq_len=128, max_y_seq_len=128):
+    def __init__(self, data, batch_size, shuffle=True, sort_by_len=False, x_pad_idx=0, y_pad_idx=0,
+                 max_x_seq_len=128, max_y_seq_len=128, max_sentence_len=torch.inf):
         self.data = data
         self.batch_size = batch_size
         self.num_batches = 0
         self.iterations = 0
+        self.max_sentence_len = max_sentence_len
 
         if shuffle:
             np.random.shuffle(self.data)
         if sort_by_len:
             self.data.sort(key=lambda x: len(x[0]))
-        self.batches = list(self.make_batches(data, batch_size, x_pad_idx, y_pad_idx, max_x_seq_len, max_y_seq_len))
+        if self.max_sentence_len != torch.inf:
+            self.data = list(filter(lambda x: len(x[0]) <= self.max_sentence_len and len(x[1]) <= self.max_sentence_len,
+                               self.data))
+        self.batches = list(self.make_batches(self.data, batch_size, x_pad_idx, y_pad_idx, max_x_seq_len, max_y_seq_len))
 
     def __iter__(self):
         for batch in self.batches:

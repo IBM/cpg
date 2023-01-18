@@ -48,7 +48,8 @@ def train(args):
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len,
-                                sort_by_len=args.sort_by_len)
+                                sort_by_len=args.sort_by_len,
+                                max_sentence_len=args.max_sentence_len)
     
     preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     valid_loader = MyDataLoader(preprocessed_valid_data,
@@ -58,7 +59,8 @@ def train(args):
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len,
-                                sort_by_len=args.sort_by_len)
+                                sort_by_len=args.sort_by_len,
+                                max_sentence_len=args.max_sentence_len)
     
     model = SCANModel(model=args.model,
                       y_vocab=y_vocab,
@@ -233,9 +235,10 @@ def main():
     parser.add_argument('--optimizer', default='adam')
     parser.add_argument('--fine-grained', default=False, action='store_true')
     parser.add_argument('--halve-lr-every', default=2, type=int)
-    parser.add_argument('--max_x_seq_len', default=10)
-    parser.add_argument('--max_y_seq_len', default=10)
+    parser.add_argument('--max_x_seq_len', default=6)
+    parser.add_argument('--max_y_seq_len', default=6)
     parser.add_argument('--data-frac', default = 1., type=float)
+    parser.add_argument('--max-sentence-len', default = torch.inf, type=int)
     parser.add_argument('--use_teacher_forcing', default=True)
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
     parser.add_argument('--use-prim-type-oracle', default=False)
