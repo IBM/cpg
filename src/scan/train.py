@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from random import randint
 
 from tensorboardX import SummaryWriter
 
@@ -14,7 +15,6 @@ from torch.nn import functional as F
 from src.scan.model import SCANModel
 
 from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim
-
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
@@ -36,7 +36,28 @@ def train(args):
     logging.info(f"X Vocab size: {len(x_vocab)}")
     logging.info(f"Y Vocab size: {len(y_vocab)}")
 
-    preprocessed_train_data = preprocess(train_data, x_vocab, y_vocab)
+    def select(x, curriculum_stage):
+        if curriculum_stage < 4:
+            if "and" in x[0] or "after" in x[0]:
+                return False
+        if curriculum_stage < 3:
+            if "twice" in x[0] or "thrice" in x[0]:
+                return False
+        if curriculum_stage < 2:
+            if "opposite" in x[0] or "around" in x[0]:
+                return False
+        if curriculum_stage < 1:
+            if "turn" in x[0]:
+                return False
+        return True
+
+    if args.use_curriculum:
+        curriculum_stage = 0
+        train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
+        print(train_data_curriculum)
+        preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
+    else:
+        preprocessed_train_data = preprocess(train_data, x_vocab, y_vocab)
     train_loader = MyDataLoader(preprocessed_train_data,
                                 batch_size=args.batch_size,
                                 shuffle=False,
@@ -44,7 +65,7 @@ def train(args):
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len)
-    
+
     preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
@@ -95,7 +116,7 @@ def train(args):
     valid_summary_writer = SummaryWriter(
         log_dir=os.path.join(args.save_dir, 'log', 'valid'))
 
-    def run_iter(batch, is_training, use_hom_loss=False):
+    def run_iter(batch, is_training=False, use_hom_loss=False, verbose=False):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
@@ -103,7 +124,16 @@ def train(args):
             outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
         else:
             outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B))
-        
+        if verbose:
+            input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
+            expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
+            decoded = y_vocab.decode_batch(outputs.numpy(), outputs != y_vocab.token_to_idx('<PAD>'))
+            print("--------------------------------")
+            for i in range(B):
+                print("input: ", ", ".join(input[i]), "\n")
+                print("expected: ", ", ".join(expected[i]), "\n")
+                print("decoded: ", ", ".join(decoded[i]))
+                print("--------------------------------")
         _, N, V = logits.size()
         _, M = batch_y.size()
         if N >= M:
@@ -137,10 +167,24 @@ def train(args):
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
-    validate_every = num_train_batches // 5
+    validate_every = 200
     best_vaild_accuacy = 0
     iter_count = 1
+    train_accuracy_epoch = 0
     for _ in range(args.max_epoch):
+        if args.use_curriculum and train_accuracy_epoch > 0.99:
+            curriculum_stage += 1
+            train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
+            print(train_data_curriculum)
+            preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
+            train_loader = MyDataLoader(preprocessed_train_data,
+                                        batch_size=args.batch_size,
+                                        shuffle=False,
+                                        x_pad_idx=x_vocab.token_to_idx('<PAD>'),
+                                        y_pad_idx=y_vocab.token_to_idx('<PAD>'),
+                                        max_x_seq_len=args.max_x_seq_len,
+                                        max_y_seq_len=args.max_y_seq_len)
+        train_accuracy_epoch = 0
         for batch_iter, train_batch in enumerate(train_loader):
             print("\niteration:", iter_count)
             if iter_count > -1:
@@ -151,8 +195,9 @@ def train(args):
             else:
                 train_loss, train_accuracy, _ = run_iter(batch=train_batch,
                                                          is_training=True)
+            train_accuracy_epoch += train_accuracy / num_train_batches
             print("semantic loss: %1.4f" %train_loss.item())
-            print("train accuracy:", train_accuracy.item())
+            print("train accuracy: %1.4f" %train_accuracy.item())
             iter_count += 1
             add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
             add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
@@ -163,9 +208,13 @@ def train(args):
             if (batch_iter + 1) % validate_every == 0:
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
-                for valid_batch in valid_loader:
-                    valid_loss, valid_accuracy, _ = run_iter(
-                        batch=valid_batch, is_training=False)
+                k = randint(0, num_valid_batches - 1)
+                for i, valid_batch in enumerate(valid_loader):
+                    if args.print_in_valid and i == k:
+                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
+                                                                 verbose=True)
+                    else:
+                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch)
                     valid_loss_sum += valid_loss.item()
                     valid_accuracy_sum += valid_accuracy.item()
                 valid_loss = valid_loss_sum / num_valid_batches
@@ -213,6 +262,8 @@ def main():
     parser.add_argument('--use_teacher_forcing', default=True)
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
     parser.add_argument('--use-prim-type-oracle', default=False)
+    parser.add_argument('--print-in-valid', default=False)
+    parser.add_argument('--use-curriculum', default=False)
     args = parser.parse_args()
     train(args)
 
