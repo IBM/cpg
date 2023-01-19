@@ -12,7 +12,7 @@ scan_grammar = """
     g: s AFTER
     s: v TWICE | v THRICE | v
     e: a m | t m
-    v: e d
+    v: e d | a d | t d
     a: WALK | LOOK | RUN | JUMP
     t: TURN
     m: OPPOSITE | AROUND
