@@ -3,13 +3,11 @@ try:
 except NameError:
     pass
 
-import turtle
-
 from lark import Lark
 
 scan_grammar = """
     start: c
-    c: f e | g s | s
+    c:  f e | g s | s
     f: s AND
     g: s AFTER
     s: v TWICE | v THRICE | v
@@ -20,19 +18,19 @@ scan_grammar = """
     m: OPPOSITE | AROUND
     d: LEFT | RIGHT
     
-    AND: LETTER+
-    AFTER: LETTER+
-    TWICE: LETTER+
-    THRICE: LETTER+
-    WALK: LETTER+
-    LOOK: LETTER+
-    RUN: LETTER+
-    JUMP: LETTER+
-    TURN: LETTER+
-    OPPOSITE: LETTER+
-    AROUND: LETTER+
-    LEFT: LETTER+
-    RIGHT: LETTER+
+    AND: "and"
+    AFTER: "after"
+    TWICE: "twice"
+    THRICE: "thrice"
+    WALK: "walk"
+    LOOK: "look"
+    RUN: "run"
+    JUMP: "jump"
+    TURN: "turn"
+    OPPOSITE: "opposite"
+    AROUND: "around"
+    LEFT: "left"
+    RIGHT: "right"
 
     %import common.LETTER
     %import common.WS
