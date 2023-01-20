@@ -14,7 +14,7 @@ from torch.nn import functional as F
 
 from src.scan.model import SCANModel
 
-from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim
+from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim, parse_scan
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_add_prim()
+    train_data, test_data = load_SCAN_length()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train data set size: {len(train_data)}")
@@ -80,7 +80,7 @@ def train(args):
                       x_vocab=x_vocab,
                       word_dim=args.word_dim,
                       hidden_value_dim=args.hidden_dim,
-                      hidden_type_dim=10,
+                      hidden_type_dim=13,
                       decoder_hidden_dim=args.decoder_hidden_dim,
                       decoder_num_layers=args.decoder_num_layers,
                       use_leaf_rnn=args.leaf_rnn,
@@ -89,7 +89,8 @@ def train(args):
                       use_batchnorm=args.batchnorm,
                       dropout_prob=args.dropout,
                       max_y_seq_len=args.max_y_seq_len,
-                      use_prim_type_oracle=args.use_prim_type_oracle)
+                      use_prim_type_oracle=args.use_prim_type_oracle,
+                      syntactic_supervision=args.syntactic_supervision)
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -120,10 +121,27 @@ def train(args):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
-        if is_training and args.use_teacher_forcing:
-            outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B), force=batch_y)
+        if args.syntactic_supervision:
+            positions_force = []
+            types_force = []
+            x_tokens = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
+            for i in range(len(x_tokens)):
+                x_tokens[i] = " ".join(x_tokens[i])
+            #print("x tokens:", x_tokens)
+            for i in range(B):
+                positions, types = parse_scan(x_tokens[i])
+                positions_force.append(positions)
+                types_force.append(types)
+            #print("types force:", types_force)
         else:
-            outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B))
+            positions_force = None
+            types_force = None
+        if is_training and args.use_teacher_forcing:
+            force = batch_y
+        else:
+            force = None
+        outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B),
+                                          force=force, positions_force=positions_force, types_force=types_force)
         if verbose:
             input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
             expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
@@ -264,6 +282,7 @@ def main():
     parser.add_argument('--use-prim-type-oracle', default=False)
     parser.add_argument('--print-in-valid', default=False)
     parser.add_argument('--use-curriculum', default=False)
+    parser.add_argument('--syntactic-supervision', default=False)
     args = parser.parse_args()
     train(args)
 

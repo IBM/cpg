@@ -7,6 +7,7 @@ import urllib.request
 import os
 from dataclasses import dataclass, field
 from typing import Dict
+from lark import Lark
 
 SCAN_LENGTH_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/length_split/tasks_train_length.txt"
 SCAN_LENGTH_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/length_split/tasks_test_length.txt"
@@ -213,3 +214,96 @@ scan_word_to_type = {
     "after": PrimitiveScanTypes.C,
     "turn": PrimitiveScanTypes.T
 }
+
+class ScanTypes(IntEnum):
+    A = 0
+    T = 1
+    M = 2
+    D = 3
+    Q = 4
+    I = 5
+    J = 6
+    C = 7
+    F = 8
+    G = 9
+    S = 10
+    E = 11
+    V = 12
+
+
+scan_token_to_type = {
+    "twice": ScanTypes.Q,
+    "thrice": ScanTypes.Q,
+    "walk": ScanTypes.A,
+    "look": ScanTypes.A,
+    "run": ScanTypes.A,
+    "jump": ScanTypes.A,
+    "opposite": ScanTypes.M,
+    "around": ScanTypes.M,
+    "left": ScanTypes.D,
+    "right": ScanTypes.D,
+    "and": ScanTypes.C,
+    "after": ScanTypes.C,
+    "turn": ScanTypes.T,
+    "c": ScanTypes.C,
+    "f": ScanTypes.F,
+    "g": ScanTypes.G,
+    "s": ScanTypes.S,
+    "e": ScanTypes.E,
+    "v": ScanTypes.V
+}
+
+scan_grammar = """
+    start: c | s | v | a
+    c: f s | g s | f a | f v | g a | g v
+    f: s i | a i | v i
+    g: s j | a j | v j
+    s: v q | a q
+    e: a m | t m
+    v: e d | a d | t d
+    a: WALK | LOOK | RUN | JUMP
+    t: TURN
+    m: OPPOSITE | AROUND
+    d: LEFT | RIGHT
+    q: TWICE | THRICE
+    i: AND
+    j: AFTER
+    
+    AND: "and"
+    AFTER: "after"
+    TWICE: "twice"
+    THRICE: "thrice"
+    WALK: "walk"
+    LOOK: "look"
+    RUN: "run"
+    JUMP: "jump"
+    TURN: "turn"
+    OPPOSITE: "opposite"
+    AROUND: "around"
+    LEFT: "left"
+    RIGHT: "right"
+
+    %import common.LETTER
+    %import common.WS
+    %ignore WS
+"""
+
+parser = Lark(scan_grammar, propagate_positions=True)
+
+def parse_scan(scan_command):
+    parse_tree = parser.parse(scan_command)
+    current_position = 0
+    previous_index = 0
+    positions = []
+    types = []
+    for node in parse_tree.iter_subtrees_topdown():
+        if previous_index < node.meta.start_pos:
+            current_position += 1
+            previous_index = node.meta.start_pos
+        if node.data.value in ["a", "t", "m", "d", "q", "i", "j", "start"]:
+            continue
+        positions.append(current_position)
+        types.append(scan_token_to_type[node.data.value])
+    return positions, types
+
+print(parse_scan("jump around left twice and walk opposite right thrice"))

@@ -107,7 +107,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         #init.constant_(self.comp_linear_t.bias.data, val=0)
         # type predictor's parameter are not reset
 
-    def forward(self, l=None, r=None):
+    def forward(self, l=None, r=None, positions_force=None, target_types=None):
         """
         Args:
             l: A (h_l, c_l) tuple, where each value has the size
@@ -137,27 +137,41 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                + u.tanh() * i.sigmoid())
         h_v = o.sigmoid() * c.tanh()
 
-        # compute updated hidden state and memory types
-        hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
-        _, h_t = self.binary_type_predictor(hlr_cat_t)
+        if target_types != None:
+            _, sem_h_t = self.type_predictor(h_v)
+            B, L, T = sem_h_t.shape
+            positions = torch.zeros(B).long()
+            for i in range(B):
+                if positions_force[i] == []:
+                    positions[i] = 0
+                else:
+                    positions[i] = positions_force[i][-1]
+            hom_loss = F.cross_entropy(torch.clamp(sem_h_t[torch.arange(B), positions].view(B, T), min=1e-10, max=1.0).log(),
+                                       target_types.long())
+            new_h = torch.cat([h_v, sem_h_t], dim=2)
+        else:
+            # compute updated hidden state and memory types
+            hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
+            _, h_t = self.binary_type_predictor(hlr_cat_t)
 
-        # compute type prediction from semantic value
-        _, sem_h_t = self.type_predictor(h_v)
+            # compute type prediction from semantic value
+            _, sem_h_t = self.type_predictor(h_v)
 
-        # compute homomorphic loss
-        kl_loss = torch.nn.KLDivLoss()
-        hom_loss = kl_loss(h_t.log(), sem_h_t)
+            # compute homomorphic loss
+            kl_loss = torch.nn.KLDivLoss()
+            hom_loss = kl_loss(torch.clamp(h_t, min=1e-10, max=1.0).log(), torch.clamp(sem_h_t, min=1e-10, max=1.0))
 
-        # concatenate value and type information for the hidden state
-        new_h_type = F.one_hot(torch.argmax((h_t + sem_h_t) / 2.0, dim=-1), num_classes=self.hidden_type_dim)
-        new_h = torch.cat([h_v, new_h_type], dim=2)
+            # concatenate value and type information for the hidden state
+            new_h_type = F.one_hot(torch.argmax((h_t + sem_h_t) / 2.0, dim=-1), num_classes=self.hidden_type_dim)
+            new_h = torch.cat([h_v, new_h_type], dim=2)
 
         return (new_h, c), hom_loss
 
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, is_lstm=False, scan_token_to_type_map=None, input_tokens=None):
+                 gumbel_temperature, bidirectional, is_lstm=False, scan_token_to_type_map=None,
+                 input_tokens=None, positions_force=None, types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
         self.hidden_value_dim = hidden_value_dim
@@ -169,6 +183,8 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.is_lstm = is_lstm
         self.scan_token_to_type_map = scan_token_to_type_map
         self.input_tokens = input_tokens
+        self.positions_force = positions_force
+        self.types_force = types_force
 
         assert not (self.bidirectional and not self.use_leaf_rnn)
 
@@ -226,14 +242,24 @@ class TypedBinaryTreeLSTM(nn.Module):
         c = done_mask * new_c + (1 - done_mask) * old_c[:, :-1, :]
         return h, c
 
-    def select_composition(self, old_state, new_state, mask):
+    def select_composition(self, old_state, new_state, mask, positions_force=None):
         new_h, new_c = new_state
         old_h, old_c = old_state
         old_h_left, old_h_right = old_h[:, :-1, :], old_h[:, 1:, :]
         old_c_left, old_c_right = old_c[:, :-1, :], old_c[:, 1:, :]
         comp_weights = (self.comp_query * new_h).sum(-1)
         comp_weights = comp_weights / math.sqrt(self.hidden_value_dim + self.hidden_type_dim)
-        if not self.is_lstm:
+        B, L = comp_weights.size()
+        if positions_force != None:
+            positions = torch.zeros(B).long()
+            for i in range(B):
+                if positions_force[i] == []:
+                    positions[i] = 0
+                else:
+                    positions[i] = positions_force[i][-1]
+            select_mask = F.one_hot(positions, comp_weights.size(1))
+            select_mask = select_mask.float()
+        elif not self.is_lstm:
             if self.training:
                 select_mask = basic.st_gumbel_softmax(
                     logits=comp_weights, temperature=self.gumbel_temperature,
@@ -259,7 +285,7 @@ class TypedBinaryTreeLSTM(nn.Module):
         selected_h = (select_mask_expand * new_h).sum(1)
         return new_h, new_c, select_mask, selected_h
 
-    def forward(self, input, length, input_tokens, return_select_masks=False):
+    def forward(self, input, length, input_tokens, return_select_masks=False, positions_force=None, types_force=None):
         max_depth = input.size(1)
         length_mask = basic.sequence_mask(sequence_length=length,
                                           max_length=max_depth)
@@ -313,7 +339,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                 # compute cross entropy loss of predicted type against the oracle
                 B, L, T = h_t.shape
                 target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-                hom_loss_sum = F.cross_entropy((h_t.view(B*L, T)+1e-10).log(), target_types)
+                hom_loss_sum = F.cross_entropy(torch.clamp(h_t.view(B*L, T), min=1e-10, max=1.0).log(), target_types)
 
             h = torch.concat((h_v, F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)), dim=2)
             state = h, c
@@ -324,14 +350,29 @@ class TypedBinaryTreeLSTM(nn.Module):
             h, c = state
             l = (h[:, :-1, :], c[:, :-1, :])
             r = (h[:, 1:, :], c[:, 1:, :])
-            new_state, hom_loss = self.treelstm_layer(l=l, r=r)
+            B, _, _ = h.size()
+            if types_force != None:
+                # get target types for this step and remove them
+                target_types = torch.zeros(B)
+                for k in range(len(types_force)):
+                    if types_force[k] != []:
+                        target_types[k] = types_force[k][-1]
+                        types_force[k].pop(-1)
+            else:
+                target_types = None
+            new_state, hom_loss = self.treelstm_layer(l=l, r=r, positions_force=positions_force, target_types=target_types)
             hom_loss_sum += hom_loss
             if i < max_depth - 2:
                 # We don't need to greedily select the composition in the
                 # last iteration, since it has only one option left.
                 new_h, new_c, select_mask, selected_h = self.select_composition(
                     old_state=state, new_state=new_state,
-                    mask=length_mask[:, i + 1:])
+                    mask=length_mask[:, i + 1:], positions_force=positions_force)
+                # remove positions at this step
+                if positions_force != None:
+                    for k in range(len(positions_force)):
+                        if positions_force[k] != []:
+                            positions_force[k].pop(-1)
                 new_state = (new_h, new_c)
                 select_masks.append(select_mask)
                 if self.intra_attention:
