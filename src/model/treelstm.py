@@ -106,8 +106,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
-        self.comp_linear_v = [nn.Linear(in_features=2 * hidden_value_dim,
-                                       out_features=5 * hidden_value_dim) for i in range(0, 5)]
+        self.comp_linear_v = nn.ModuleList([nn.Linear(in_features=2 * hidden_value_dim,
+                                                      out_features=5 * hidden_value_dim) for i in range(5)])
         self.comp_moe = nn.Linear(in_features=2 * hidden_type_dim,
                                   out_features=5)
         self.type_predictor = type_predictor
