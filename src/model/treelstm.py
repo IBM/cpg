@@ -90,7 +90,8 @@ class TypePredictor(nn.Module):
 
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
-    def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor, binary_type_predictor):
+    def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor, binary_type_predictor,
+                 max_seq_len, decoder_sem, decoder_dec, gumbel_temperature):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
@@ -98,6 +99,12 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                                        out_features=5 * hidden_value_dim)
         self.type_predictor = type_predictor
         self.binary_type_predictor = binary_type_predictor
+        self.max_seq_len = max_seq_len
+        self.decoder_sem = decoder_sem
+        self.decoder_dec = decoder_dec
+        self.vocab_size = len(self.decoder_sem.vocab)
+        self.encoder = nn.GRU(self.vocab_size, self.hidden_value_dim, batch_first=True)
+        self.gumbel_temperature = gumbel_temperature
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -107,22 +114,43 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         #init.constant_(self.comp_linear_t.bias.data, val=0)
         # type predictor's parameter are not reset
 
+    def apply_decoder_template(self, dt, dt_sample, input_cat):
+        # dt - B x L x M x V
+        # input_cat - B x L x 2M x V
+        B, L, M, V = dt.size()
+
+        # find the locations of the slots in the template
+        s0 = self.decoder_dec.vocab.token_to_idx("_0")
+        dt_sample = dt_sample.argmax(-1).view(B*L, M)    # B x L x 2M
+        mask = dt_sample >= s0
+        idx = mask.long().nonzero().squeeze(1)
+        result = dt.clone().view(B*L, M, V)
+        # input_cat_sample = input_cat.argmax(-1).view(B*L, 2*M)
+        x_idx = dt_sample[idx[:, 0], idx[:, 1]] - s0
+        result[idx[:, 0], idx[:, 1], :] = input_cat.view(B*L, 2*M, V)[idx[:, 0], x_idx, :]
+
+        return result.view(B, L, M, V)
+
     def forward(self, l=None, r=None, positions_force=None, target_types=None):
         """
         Args:
-            l: A (h_l, c_l) tuple, where each value has the size
-                (batch_size, max_length, hidden_value_dim + hidden_type_dim).
-            r: A (h_r, c_r) tuple, where each value has the size
-                (batch_size, max_length, hidden_value_dim + hidden_type_dim).
+            l: A (h_l, c_l, d) tuple, where h_l and c_l have size
+                (batch_size, max_length, hidden_value_dim + hidden_type_dim)
+                and d has size (batch_size, max_seq_len)
+            r: A (h_r, c_r, d) tuple, where h_r and c_r have size
+                (batch_size, max_length, hidden_value_dim + hidden_type_dim)
+                and d has size (batch_size, max_seq_len)
         Returns:
-            h, c: The hidden and cell state of the composed parent,
-                each of which has the size
-                (batch_size, max_length - 1, hidden_value_dim + hidden_type_dim).
+            h, c, d, hom_loss: [0, 1] The hidden and cell state of the composed parent,
+                each of which has the size (batch_size, max_length - 1, hidden_value_dim + hidden_type_dim);
+               [3] the decoding of that parent into the output vocabulary (batch_size, max_seq_len, vocab size);
+                and [4] the homomorphic loss.  The homomorphic loss is the sum of the losses for the abstraction
+               homomorphism and the decoding homomorphism.
         """
 
         # extract state from left and right args
-        hl, cl = l
-        hr, cr = r
+        hl, cl, dl = l
+        hr, cr, dr = r
 
         # extract value and type information
         hl_v, hl_t = torch.split(hl, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hl
@@ -137,6 +165,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                + u.tanh() * i.sigmoid())
         h_v = o.sigmoid() * c.tanh()
 
+        kl_loss = torch.nn.KLDivLoss(reduction="batchmean")
         if target_types != None:
             _, sem_h_t = self.type_predictor(h_v)
             B, L, T = sem_h_t.shape
@@ -146,32 +175,96 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     positions[i] = 0
                 else:
                     positions[i] = positions_force[i][-1]
-            hom_loss = F.cross_entropy(torch.clamp(sem_h_t[torch.arange(B), positions].view(B, T), min=1e-10, max=1.0).log(),
+            abstraction_hom_loss = F.cross_entropy(torch.clamp(sem_h_t[torch.arange(B), positions].view(B, T), min=1e-10, max=1.0).log(),
                                        target_types.long())
             new_h = torch.cat([h_v, sem_h_t], dim=2)
         else:
-            # compute updated hidden state and memory types
             hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
             _, h_t = self.binary_type_predictor(hlr_cat_t)
 
-            # compute type prediction from semantic value
+            # DEBUG
+            # print("left type: ", hl_t[0, :, :])
+            # print("right type: ", hr_t[0, :, :])
+
+            # predict output type from semantic value
             _, sem_h_t = self.type_predictor(h_v)
 
-            # compute homomorphic loss
-            kl_loss = torch.nn.KLDivLoss()
-            hom_loss = kl_loss(torch.clamp(h_t, min=1e-10, max=1.0).log(), torch.clamp(sem_h_t, min=1e-10, max=1.0))
+            # compute abstract homomorphic loss to reduce their difference
+            abstraction_hom_loss = kl_loss(h_t.log(), sem_h_t)
 
-            # concatenate value and type information for the hidden state
-            new_h_type = F.one_hot(torch.argmax((h_t + sem_h_t) / 2.0, dim=-1), num_classes=self.hidden_type_dim)
+            # take output type to be the average of the two predictions
+            new_h_type = (h_t + sem_h_t) / 2.0
+
+            # compute output hidden state
             new_h = torch.cat([h_v, new_h_type], dim=2)
 
-        return (new_h, c), hom_loss
+        # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
+        # B = batch size, L = sentence length, M = max decoded seq len
+        # last dimension holds logits
+        d_cat = torch.cat([dl, dr], dim=2).float()
+
+        # sample from them (argmax over last dimension)
+        d_cat_sample = F.gumbel_softmax(d_cat, tau=self.gumbel_temperature, dim=-1, hard=True).float()
+
+        # represent in 1-hot: (BxL) x 2*max_seq_len x vocab size
+        # vocab_size = len(self.decoder.vocab)
+        # d_cat_sample = F.one_hot(d_cat_sample.flatten(),
+        #                          num_classes=vocab_size).view(B*L, 2*self.max_seq_len, vocab_size).float()
+
+        # encode the concatenated input decodings -> B x L x H (hidden)
+        d_enc = self.encoder(torch.flatten(d_cat_sample,
+                                           start_dim=0,
+                                           end_dim=1))[1].squeeze(0).view(B, L, self.hidden_value_dim)
+
+        # unflatten batch and length on input sample
+        # d_cat_sample = d_cat_sample.view(B, L, 2*self.max_seq_len, vocab_size)
+
+        # decode the decoding template (a function specification):
+        # of the form s1, s2, ..., sk where each si is either a target
+        # vocabulary element or the index of an element of the (concatenated)
+        # input pair.  This template is interpreted to produce the output
+        # (either a target element or the indexed element from the input).
+        # like a pointer network.
+        # should be much easier for it to learn to do the syntactic operations
+        # (on sequences) like `opposite`, `twice`, `thrice` etc.
+
+        # flatten the first two dimensions for the decoder -> B*L x H
+        d_enc = torch.flatten(d_enc, start_dim=0, end_dim=1)
+
+        # decode -> B x L x M x V, where M is max seq len and V is the size of the (augmented) x vocab
+        # last dimension holds logits
+        dt = self.decoder_dec.decode(d_enc, self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
+
+        # sample from it -> B x L x M
+        dt_sample = F.gumbel_softmax(dt, dim=-1, tau=self.gumbel_temperature, hard=True)
+
+        # apply decoder template to create the decoding (substituting input values for slots)
+        new_d = self.apply_decoder_template(dt, dt_sample, d_cat)
+
+        # homomorphic alignment:
+        #
+        # decode composite
+        dec_comp = self.decoder_sem.decode(torch.flatten(h_v, start_dim=0, end_dim=1),
+                                           self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
+
+        # compute homomorphic loss for decoding:
+        decoding_hom_loss = kl_loss(torch.log_softmax(new_d, dim=-1), torch.softmax(dec_comp, dim=-1))
+        # TK DEBUG -- logits
+        decoding = (dec_comp + new_d) / 2.0
+        # decoding = F.gumbel_softmax(decoding, dim=-1, tau=self.gumbel_temperature, hard=True).float()
+
+        # TK DEBUG
+        # print("new_d: ", dec_comp)
+
+        hom_loss = abstraction_hom_loss + decoding_hom_loss
+
+        return (new_h, c, decoding), hom_loss
 
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, is_lstm=False, scan_token_to_type_map=None,
-                 input_tokens=None, positions_force=None, types_force=None):
+                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_dec, is_lstm=False,
+                 scan_token_to_type_map=None, input_tokens=None, positions_force=None, types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
         self.hidden_value_dim = hidden_value_dim
@@ -183,6 +276,9 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.is_lstm = is_lstm
         self.scan_token_to_type_map = scan_token_to_type_map
         self.input_tokens = input_tokens
+        self.max_seq_len = max_seq_len
+        self.decoder_sem = decoder_sem
+        self.decoder_dec = decoder_dec
         self.positions_force = positions_force
         self.types_force = types_force
 
@@ -200,17 +296,29 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.type_predictor = TypePredictor(hidden_value_dim, [32, 32], hidden_type_dim)
         self.binary_type_predictor = TypePredictor(2 * hidden_type_dim, [32, 32], hidden_type_dim)
         if self.bidirectional:
-            self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim, self.type_predictor, self.binary_type_predictor)
+            self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim,
+                                                           self.type_predictor,
+                                                           self.binary_type_predictor,
+                                                           self.max_seq_len,
+                                                           self.decoder_sem,
+                                                           self.decoder_dec,
+                                                           self.gumbel_temperature)
             self.comp_query = nn.Parameter(torch.FloatTensor(2 * (hidden_value_dim + hidden_type_dim)))
         else:
-            self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim, self.type_predictor, self.binary_type_predictor)
+            self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim,
+                                                           self.type_predictor,
+                                                           self.binary_type_predictor,
+                                                           self.max_seq_len,
+                                                           self.decoder_sem,
+                                                           self.decoder_dec,
+                                                           self.gumbel_temperature)
             self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
         self.reset_parameters()
 
-    def reduce_gumbel_temp(self, iter):
-        self.type_predictor.reduce_gumbel_temp(0.0003, iter, verbose=True)
-        self.binary_type_predictor.reduce_gumbel_temp(0.0003, iter, verbose=True)
+    def reduce_gumbel_temp(self, it):
+        self.type_predictor.reduce_gumbel_temp(0.0003, it, verbose=True)
+        self.binary_type_predictor.reduce_gumbel_temp(0.0003, it, verbose=True)
 
     def reset_parameters(self):
         if self.use_leaf_rnn:
@@ -235,18 +343,22 @@ class TypedBinaryTreeLSTM(nn.Module):
 
     @staticmethod
     def update_state(old_state, new_state, done_mask):
-        old_h, old_c = old_state
-        new_h, new_c = new_state
+        old_h, old_c, old_d = old_state
+        new_h, new_c, new_d = new_state
         done_mask = done_mask.float().unsqueeze(1).unsqueeze(2)
         h = done_mask * new_h + (1 - done_mask) * old_h[:, :-1, :]
         c = done_mask * new_c + (1 - done_mask) * old_c[:, :-1, :]
-        return h, c
+        done_mask = done_mask.unsqueeze(3)
+        d = done_mask * new_d + (1 - done_mask) * old_d[:, :-1, :, :]
+        return h, c, d
 
     def select_composition(self, old_state, new_state, mask, positions_force=None):
-        new_h, new_c = new_state
-        old_h, old_c = old_state
+        new_h, new_c, new_d = new_state
+        old_h, old_c, old_d = old_state
         old_h_left, old_h_right = old_h[:, :-1, :], old_h[:, 1:, :]
         old_c_left, old_c_right = old_c[:, :-1, :], old_c[:, 1:, :]
+        old_d_left, old_d_right = old_d[:, :-1, :, :], old_d[:, 1:, :, :]
+
         comp_weights = (self.comp_query * new_h).sum(-1)
         comp_weights = comp_weights / math.sqrt(self.hidden_value_dim + self.hidden_type_dim)
         B, L = comp_weights.size()
@@ -270,20 +382,30 @@ class TypedBinaryTreeLSTM(nn.Module):
         else:
             select_mask = F.one_hot(torch.zeros(comp_weights.size(0)).long(), comp_weights.size(1))
             select_mask = select_mask.float()
-        select_mask_expand = select_mask.unsqueeze(2).expand_as(new_h)
+
+        # mask hidden state, memory, and decodings
+        new_h, selected_h = self.mask(old_h_left, old_h_right, select_mask, new_h)
+        new_c, _ = self.mask(old_c_left, old_c_right, select_mask, new_c)
+        B, L, M, V = new_d.size()
+        new_d, selected_d = self.mask(old_d_left.view(B, L, M*V),
+                                      old_d_right.view(B, L, M*V),
+                                      select_mask,
+                                      new_d.view(B, L, M*V))
+        return new_h, new_c, new_d.view(B, L, M, V), select_mask, selected_h
+
+    @staticmethod
+    def mask(old_left, old_right, select_mask, new):
+        select_mask_expand = select_mask.unsqueeze(2).expand_as(new)
         select_mask_cumsum = select_mask.cumsum(1)
         left_mask = 1 - select_mask_cumsum
-        left_mask_expand = left_mask.unsqueeze(2).expand_as(old_h_left)
+        left_mask_expand = left_mask.unsqueeze(2).expand_as(old_left)
         right_mask = select_mask_cumsum - select_mask
-        right_mask_expand = right_mask.unsqueeze(2).expand_as(old_h_right)
-        new_h = (select_mask_expand * new_h
-                 + left_mask_expand * old_h_left
-                 + right_mask_expand * old_h_right)
-        new_c = (select_mask_expand[:, :, :300] * new_c
-                 + left_mask_expand[:, :, :300] * old_c_left
-                 + right_mask_expand[:, :, :300] * old_c_right)
-        selected_h = (select_mask_expand * new_h).sum(1)
-        return new_h, new_c, select_mask, selected_h
+        right_mask_expand = right_mask.unsqueeze(2).expand_as(old_right)
+        new = (select_mask_expand * new
+                 + left_mask_expand * old_left
+                 + right_mask_expand * old_right)
+        selected = (select_mask_expand * new).sum(1)
+        return new, selected
 
     def forward(self, input, length, input_tokens, return_select_masks=False, positions_force=None, types_force=None):
         max_depth = input.size(1)
@@ -335,21 +457,34 @@ class TypedBinaryTreeLSTM(nn.Module):
             state_v = self.word_linear(input)
             h_v, c = state_v.chunk(chunks=2, dim=2)
             h_t_samples, h_t = self.type_predictor(h_v)
+            # decode each word separately ((B*L), max_seq_len, target vocab size)
+            # reshape to B x L x max_seq_len x len(decoder.vocab)
+            target_vocab_size = len(self.decoder_sem.vocab)  # includes max seq len slots variables "_i"
+            B, L = input_tokens.size()
+            initial_decodings = torch.zeros(B, L, self.max_seq_len)
+            initial_decodings[:, :, 0] = input_tokens
+            initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
+                                          num_classes=target_vocab_size).view(B, L,
+                                                                              self.max_seq_len,
+                                                                              target_vocab_size)
             if self.scan_token_to_type_map is not None:
                 # compute cross entropy loss of predicted type against the oracle
-                B, L, T = h_t.shape
+                B, L, T_t = h_t.shape
                 target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-                hom_loss_sum = F.cross_entropy(torch.clamp(h_t.view(B*L, T), min=1e-10, max=1.0).log(), target_types)
+                hom_loss_sum = F.cross_entropy(torch.clamp(h_t.view(B*L, T_t), min=1e-10, max=1.0).log(), target_types)
 
-            h = torch.concat((h_v, F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)), dim=2)
-            state = h, c
+            # TK DEBUG
+            # new_types = F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)
+            # h = torch.concat((h_v, new_types), dim=2)
+            h = torch.concat((h_v, h_t), dim=2)
+            state = h, c, initial_decodings
         nodes = []
         if self.intra_attention:
             nodes.append(state[0])
         for i in range(max_depth - 1):
-            h, c = state
-            l = (h[:, :-1, :], c[:, :-1, :])
-            r = (h[:, 1:, :], c[:, 1:, :])
+            h, c, d = state
+            l = (h[:, :-1, :], c[:, :-1, :], d[:, :-1, :, :])
+            r = (h[:, 1:, :], c[:, 1:, :], d[:, 1:, :, :])
             B, _, _ = h.size()
             if types_force != None:
                 # get target types for this step and remove them
@@ -360,12 +495,14 @@ class TypedBinaryTreeLSTM(nn.Module):
                         types_force[k].pop(-1)
             else:
                 target_types = None
-            new_state, hom_loss = self.treelstm_layer(l=l, r=r, positions_force=positions_force, target_types=target_types)
+
+            new_state, hom_loss = self.treelstm_layer(l=l, r=r, positions_force=positions_force,
+                                                                                  target_types=target_types)
             hom_loss_sum += hom_loss
             if i < max_depth - 2:
                 # We don't need to greedily select the composition in the
                 # last iteration, since it has only one option left.
-                new_h, new_c, select_mask, selected_h = self.select_composition(
+                new_h, new_c, new_d, select_mask, selected_h = self.select_composition(
                     old_state=state, new_state=new_state,
                     mask=length_mask[:, i + 1:], positions_force=positions_force)
                 # remove positions at this step
@@ -373,7 +510,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                     for k in range(len(positions_force)):
                         if positions_force[k] != []:
                             positions_force[k].pop(-1)
-                new_state = (new_h, new_c)
+                new_state = (new_h, new_c, new_d)
                 select_masks.append(select_mask)
                 if self.intra_attention:
                     nodes.append(selected_h)
@@ -382,7 +519,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                       done_mask=done_mask)
             if self.intra_attention and i >= max_depth - 2:
                 nodes.append(state[0])
-        h, c = state
+        h, c, d = state
         if self.intra_attention:
             att_mask = torch.cat([length_mask, length_mask[:, 1:]], dim=1)
             att_mask = att_mask.float()
@@ -402,6 +539,6 @@ class TypedBinaryTreeLSTM(nn.Module):
             h = (att_weights_expand * nodes).sum(1)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
-            return h.squeeze(1), c.squeeze(1), hom_loss_sum
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum
         else:
-            return h.squeeze(1), c.squeeze(1), hom_loss_sum, select_masks
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, select_masks

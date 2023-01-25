@@ -140,7 +140,7 @@ def train(args):
             force = batch_y
         else:
             force = None
-        outputs, logits, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B),
+        outputs, logits, decoding_x, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B),
                                           force=force, positions_force=positions_force, types_force=types_force)
         if verbose:
             input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))

@@ -50,7 +50,6 @@ class Decoder(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-
         self.embedding = nn.Embedding(vocab.size(), input_dim)
         self.gru = nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_dim, vocab.size())
@@ -64,11 +63,56 @@ class Decoder(nn.Module):
         out = self.fc(out)
         return out.view(B, O), hidden
 
+    def decode(self, sem_f, max_seq_len, force=None):
+        B, _ = sem_f.size()
+        y_vocab = self.vocab
+        V = y_vocab.size()
+        M = max_seq_len
+
+        # first token is '<SOS>', first hidden is `sem_f` repeated in each RNN hidden layer
+        inputs = torch.tensor([y_vocab.token_to_idx('<SOS>') for _ in range(B)], dtype=torch.long)
+        hidden = sem_f.unsqueeze(0).repeat_interleave(self.num_layers, dim=0)
+
+        unf_idxs = torch.arange(B)  # unfinished batch indices
+        decoded = torch.full((B, M), 0)  # -1 represents an empty slot, used to later compute mask
+        logits = torch.zeros((B, M, V))
+        for t in range(M):
+
+            outputs, hidden = self.forward(inputs, hidden)
+
+            #decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+            # TK -- changed from argmax
+            probs = torch.exp(outputs)
+            decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
+            decoded[unf_idxs, t] = decoded_idxs
+
+            logits[unf_idxs, t, :] = outputs  # save logits for loss computation
+
+            if force is not None:
+                if t + 1 < force.shape[1]:
+                    inputs = force[:, t]
+                else:
+                    break  # break if we've reached the end of the forced input
+            else:
+                is_finished = decoded_idxs == y_vocab.token_to_idx('<EOS>')
+                unf_idxs = unf_idxs[~is_finished]
+                if len(unf_idxs) > 0:
+                    inputs = decoded_idxs[~is_finished]
+                    hidden = hidden[:, ~is_finished]
+                else:
+                    break  # break if all sequences have reached '<EOS>'
+
+        # TK DEBUG
+        # return decoded[:, :t + 1], logits[:, :t + 1, :]
+        return decoded, logits
+
+
 class SCANModel(nn.Module):
 
     def __init__(self, model, y_vocab, x_vocab, word_dim, hidden_value_dim, hidden_type_dim,
                  decoder_hidden_dim, decoder_num_layers, use_leaf_rnn, bidirectional,
-                 intra_attention, use_batchnorm, dropout_prob, max_y_seq_len, use_prim_type_oracle, syntactic_supervision):
+                 intra_attention, use_batchnorm, dropout_prob, max_y_seq_len, use_prim_type_oracle,
+                 syntactic_supervision):
         super(SCANModel, self).__init__()
         self.model = model
         self.num_classes = len(y_vocab)
@@ -106,6 +150,14 @@ class SCANModel(nn.Module):
                 token_idx = self.x_vocab._token_to_idx[word]
                 type = scan_word_to_type[word]
                 self.scan_token_to_type_map[token_idx] = type
+        # x to y decoder
+        self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+
+        # x to x decoder
+        # add max_seq_len slots to x vocab.  The slots are named "_0", "_1", ..., "_k" for k=2*max seq len
+        [x_vocab.add_token("_" + str(i)) for i in range(2*self.max_y_seq_len)]
+        self.decoder_sem = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.decoder_dec = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
                                            hidden_value_dim=hidden_value_dim,
                                            hidden_type_dim=hidden_type_dim,
@@ -113,10 +165,14 @@ class SCANModel(nn.Module):
                                            intra_attention=intra_attention,
                                            gumbel_temperature=1,
                                            bidirectional=bidirectional,
+                                           max_seq_len=self.max_y_seq_len,
+                                           decoder_sem=self.decoder_sem,
+                                           decoder_dec=self.decoder_dec,
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
-        self.decoder = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
         self.reset_parameters()
+        self.lstm_encoder.reset_parameters()
 
     def reduce_gumbel_temp(self, iter):
         self.encoder.reduce_gumbel_temp(iter)
@@ -125,52 +181,18 @@ class SCANModel(nn.Module):
         init.normal_(self.embedding.weight.data, mean=0, std=0.01)
         self.encoder.reset_parameters()
 
-    def decode(self, sem_f, max_seq_len, force=None):
-        B, _ = sem_f.size()
-        y_vocab = self.y_vocab
-        V = y_vocab.size()
-        M = max_seq_len
-
-        # first token is '<SOS>', first hidden is `sem_f` repeated in each RNN hidden layer
-        inputs = torch.tensor([y_vocab.token_to_idx('<SOS>') for _ in range(B)], dtype=torch.long)
-        hidden = sem_f.unsqueeze(0).repeat_interleave(self.decoder.num_layers, dim=0)
-
-        unf_idxs = torch.arange(B) # unfinished batch indices
-        decoded = torch.full((B, M), 0) # -1 represents an empty slot, used to later compute mask
-        logits = torch.zeros((B, M, V))
-        for t in range(M):
-
-            outputs, hidden = self.decoder(inputs, hidden)
-
-            decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
-            # TK -- changed from argmax
-            #probs = torch.exp(outputs)
-            #decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
-            #decoded[unf_idxs, t] = decoded_idxs
-
-            logits[unf_idxs, t, :] = outputs # save logits for loss computation
-
-            if force is not None:
-                if t+1 < force.shape[1]:
-                    inputs = force[:, t]
-                else:
-                    break # break if we've reached the end of the forced input
-            else:
-                is_finished = decoded_idxs == y_vocab.token_to_idx('<EOS>')
-                unf_idxs = unf_idxs[~is_finished]
-                if len(unf_idxs) > 0:
-                    inputs = decoded_idxs[~is_finished]
-                    hidden = hidden[:, ~is_finished]
-                else:
-                    break # break if all sequences have reached '<EOS>'
-        
-        return decoded[:, :t+1], logits[:, :t+1, :]
-
     def forward(self, x, length, force=None, positions_force=None, types_force=None):
         x_embed = self.embedding(x)
         x_embed = self.dropout(x_embed)
-        sentence_vector, _, hom_loss = self.encoder(input=x_embed, length=length, input_tokens=x, 
-                                                    positions_force=positions_force, types_force=types_force)
+        sentence_vector, _, decoding_x, hom_loss = self.encoder(input=x_embed,
+                                                                length=length,
+                                                                input_tokens=x,
+                                                                positions_force=positions_force,
+                                                                types_force=types_force)
+        # TK DEBUG
+        # print("decoding: ", decoding_x)
         sentence_vector = sentence_vector[:, :self.hidden_value_dim]
-        outputs, logits = self.decode(sentence_vector, self.max_y_seq_len, force)
-        return outputs, logits, hom_loss
+        # encode the x vocab decoding
+        enc_x = self.lstm_encoder(decoding_x)[1][0].squeeze(0)
+        outputs, logits = self.decoder_target.decode(enc_x, self.max_y_seq_len, force)
+        return outputs, logits, decoding_x, hom_loss
