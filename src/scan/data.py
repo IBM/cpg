@@ -19,10 +19,18 @@ SCAN_SIMPLE_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/maste
 SCAN_SIMPLE_TRAIN_FILEPATH = "./data/SCAN_simple_train.txt"
 SCAN_SIMPLE_TEST_FILEPATH = "./data/SCAN_simple_test.txt"
 
-SCAN_ADD_PRIM_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_train_addprim_jump.txt"
-SCAN_ADD_PRIM_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_test_addprim_jump.txt"
-SCAN_ADD_PRIM_TRAIN_FILEPATH = "./data/SCAN_add_prim_train.txt"
-SCAN_ADD_PRIM_TEST_FILEPATH = "./data/SCAN_add_prim_test.txt"
+SCAN_ADD_JUMP_0_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_train_addprim_jump.txt"
+SCAN_ADD_JUMP_0_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_test_addprim_jump.txt"
+SCAN_ADD_JUMP_0_TRAIN_FILEPATH = "./data/SCAN_add_jump_0_train.txt"
+SCAN_ADD_JUMP_0_TEST_FILEPATH = "./data/SCAN_add_jump_0_test.txt"
+
+SCAN_ADD_JUMP_4_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/with_additional_examples/tasks_train_addprim_complex_jump_num4_rep1.txt"
+SCAN_ADD_JUMP_4_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/with_additional_examples/tasks_test_addprim_complex_jump_num4_rep1.txt"
+SCAN_ADD_JUMP_4_TRAIN_FILEPATH = "./data/SCAN_add_jump_4_train.txt"
+SCAN_ADD_JUMP_4_TEST_FILEPATH = "./data/SCAN_add_jump_4_test.txt"
+
+TK_SIMPLE_TRAIN_FILEPATH = "./data/simple_train.txt"
+TK_SIMPLE_TEST_FILEPATH = "./data/simple_test.txt"
 
 def download_file(url, filepath, verbose=False):
     if verbose:
@@ -64,6 +72,9 @@ def load_SCAN_length():
         download_file(SCAN_LENGTH_TEST_URL, SCAN_LENGTH_TEST_FILEPATH, verbose=True)
     return load_SCAN(SCAN_LENGTH_TRAIN_FILEPATH, SCAN_LENGTH_TEST_FILEPATH)
 
+def load_TK_simple():
+    return load_SCAN(TK_SIMPLE_TRAIN_FILEPATH, TK_SIMPLE_TEST_FILEPATH)
+
 
 def load_SCAN_simple():
     if not os.path.exists(SCAN_SIMPLE_TRAIN_FILEPATH):
@@ -72,12 +83,20 @@ def load_SCAN_simple():
         download_file(SCAN_SIMPLE_TEST_URL, SCAN_SIMPLE_TEST_FILEPATH, verbose=True)
     return load_SCAN(SCAN_SIMPLE_TRAIN_FILEPATH, SCAN_SIMPLE_TEST_FILEPATH)
 
-def load_SCAN_add_prim():
-    if not os.path.exists(SCAN_ADD_PRIM_TRAIN_FILEPATH):
-        download_file(SCAN_ADD_PRIM_TRAIN_URL, SCAN_ADD_PRIM_TRAIN_FILEPATH, verbose=True)
-    if not os.path.exists(SCAN_ADD_PRIM_TEST_FILEPATH):
-        download_file(SCAN_ADD_PRIM_TEST_URL, SCAN_ADD_PRIM_TEST_FILEPATH, verbose=True)
-    return load_SCAN(SCAN_ADD_PRIM_TRAIN_FILEPATH, SCAN_ADD_PRIM_TEST_FILEPATH)
+def load_SCAN_add_jump_0():
+    if not os.path.exists(SCAN_ADD_JUMP_0_TRAIN_FILEPATH):
+        download_file(SCAN_ADD_JUMP_0_TRAIN_URL, SCAN_ADD_JUMP_0_TRAIN_FILEPATH, verbose=True)
+    if not os.path.exists(SCAN_ADD_JUMP_0_TEST_FILEPATH):
+        download_file(SCAN_ADD_JUMP_0_TEST_URL, SCAN_ADD_JUMP_0_TEST_FILEPATH, verbose=True)
+    return load_SCAN(SCAN_ADD_JUMP_0_TRAIN_FILEPATH, SCAN_ADD_JUMP_0_TEST_FILEPATH)
+
+def load_SCAN_add_jump_4():
+    if not os.path.exists(SCAN_ADD_JUMP_4_TRAIN_FILEPATH):
+        download_file(SCAN_ADD_JUMP_4_TRAIN_URL, SCAN_ADD_JUMP_4_TRAIN_FILEPATH, verbose=True)
+    if not os.path.exists(SCAN_ADD_JUMP_4_TEST_FILEPATH):
+        download_file(SCAN_ADD_JUMP_4_TEST_URL, SCAN_ADD_JUMP_4_TEST_FILEPATH, verbose=True)
+    return load_SCAN(SCAN_ADD_JUMP_4_TRAIN_FILEPATH, SCAN_ADD_JUMP_4_TEST_FILEPATH)
+
 
 @dataclass
 class Vocabulary:
@@ -91,6 +110,9 @@ class Vocabulary:
             self._token_to_idx[token] = idx
             self._idx_to_token[idx] = token
             self._token_to_tensor[token] = torch.tensor(idx)
+
+    def contains_token(self, token):
+        return token in self._token_to_idx
 
     def add_tokens(self, tokens):
         for token in tokens:
@@ -142,15 +164,22 @@ def preprocess(data, x_vocab, y_vocab):
 
 
 class MyDataLoader:
-    def __init__(self, data, batch_size, shuffle=True, x_pad_idx=0, y_pad_idx=0, max_x_seq_len=128, max_y_seq_len=128):
+    def __init__(self, data, batch_size, shuffle=True, sort_by_len=False, x_pad_idx=0, y_pad_idx=0,
+                 max_x_seq_len=128, max_y_seq_len=128, max_sentence_len=torch.inf):
         self.data = data
         self.batch_size = batch_size
         self.num_batches = 0
         self.iterations = 0
+        self.max_sentence_len = max_sentence_len
 
         if shuffle:
             np.random.shuffle(self.data)
-        self.batches = list(self.make_batches(data, batch_size, x_pad_idx, y_pad_idx, max_x_seq_len, max_y_seq_len))
+        if sort_by_len:
+            self.data.sort(key=lambda x: len(x[0]))
+        if self.max_sentence_len != torch.inf:
+            self.data = list(filter(lambda x: len(x[0]) <= self.max_sentence_len and len(x[1]) <= self.max_sentence_len,
+                               self.data))
+        self.batches = list(self.make_batches(self.data, batch_size, x_pad_idx, y_pad_idx, max_x_seq_len, max_y_seq_len))
 
     def __iter__(self):
         for batch in self.batches:
