@@ -9,6 +9,7 @@ from torch.nn import functional as F
 
 from . import basic
 import numpy as np
+from src.scan.data import get_decoding_force
 
 class BinaryTreeLSTMLayer(nn.Module):
 
@@ -95,8 +96,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
-        self.comp_linear_v = nn.Linear(in_features=2 * (hidden_value_dim + hidden_type_dim),
-                                       out_features=5 * hidden_value_dim)
+        # No need of functions for input types
+        self.comp_linear_v = nn.ModuleList([nn.Linear(in_features=2 * (hidden_value_dim + hidden_type_dim),
+                                                      out_features=5 * hidden_value_dim) for i in range(hidden_type_dim - 9)])
         self.type_predictor = type_predictor
         self.binary_type_predictor = binary_type_predictor
         self.max_seq_len = max_seq_len
@@ -108,11 +110,12 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        init.orthogonal_(self.comp_linear_v.weight.data)
-        #init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
-        init.constant_(self.comp_linear_v.bias.data, val=0)
-        #init.constant_(self.comp_linear_t.bias.data, val=0)
-        # type predictor's parameter are not reset
+        for i in range(self.hidden_type_dim - 9):
+            init.orthogonal_(self.comp_linear_v[i].weight.data)
+            #init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
+            init.constant_(self.comp_linear_v[i].bias.data, val=0)
+            #init.constant_(self.comp_linear_t.bias.data, val=0)
+            # type predictor's parameter are not reset
 
     def apply_decoder_template(self, dt, dt_sample, input_cat):
         # dt - B x L x M x V
@@ -159,13 +162,20 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # compute updated hidden state and memory values
         # TK changed to include type information
         hlr_cat_v = torch.cat([hl, hr], dim=2)
-        treelstm_vector = self.comp_linear_v(hlr_cat_v)
+        if target_types is not None:
+            B, L, _ = hlr_cat_v.size()
+            treelstm_vector = torch.zeros(B, L, 5 * self.hidden_value_dim)
+            for i in range(B):
+                treelstm_vector[i] = self.comp_linear_v[target_types[i].int() - 9](hlr_cat_v[i])
+        else:
+            treelstm_vector = self.comp_linear_v[0](hlr_cat_v)
         i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
         c = (cl * (fl + 1).sigmoid() + cr * (fr + 1).sigmoid()
                + u.tanh() * i.sigmoid())
         h_v = o.sigmoid() * c.tanh()
 
         kl_loss = torch.nn.KLDivLoss(reduction="batchmean")
+        ce_loss = torch.nn.CrossEntropyLoss()
         if target_types != None:
             _, sem_h_t = self.type_predictor(h_v)
             B, L, T = sem_h_t.shape
@@ -198,63 +208,81 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             # compute output hidden state
             new_h = torch.cat([h_v, new_h_type], dim=2)
 
-        # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
-        # B = batch size, L = sentence length, M = max decoded seq len
-        # last dimension holds logits
-        d_cat = torch.cat([dl, dr], dim=2).float()
+        if target_types != None:
+            new_d = get_decoding_force(dl, dr, target_types, positions).long()
 
-        # sample from them (argmax over last dimension)
-        d_cat_sample = F.gumbel_softmax(d_cat, tau=self.gumbel_temperature, dim=-1, hard=True).float()
+            # homomorphic alignment:
+            #
+            # decode composite
+            dec_comp = self.decoder_sem.decode(torch.flatten(h_v, start_dim=0, end_dim=1), self.max_seq_len)[1]
+            dec_comp = dec_comp.view(B, L, self.max_seq_len, self.vocab_size)
+            #print("new_d:", new_d[0, positions[0]]) # debug
+            #print("decoded:", torch.argmax(dec_comp[torch.arange(B), positions], dim=-1)[0]) # debug
 
-        # represent in 1-hot: (BxL) x 2*max_seq_len x vocab size
-        # vocab_size = len(self.decoder.vocab)
-        # d_cat_sample = F.one_hot(d_cat_sample.flatten(),
-        #                          num_classes=vocab_size).view(B*L, 2*self.max_seq_len, vocab_size).float()
+            # compute homomorphic loss for decoding:
+            decoding_hom_loss = ce_loss(dec_comp[torch.arange(B), positions].view(B * self.max_seq_len, self.vocab_size),
+                                        new_d[torch.arange(B), positions].view(B * self.max_seq_len))
+            
+            decoding = F.one_hot(new_d, num_classes=self.vocab_size)
+        else:
+            B, L, T = sem_h_t.shape
+            # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
+            # B = batch size, L = sentence length, M = max decoded seq len
+            # last dimension holds logits
+            d_cat = torch.cat([dl, dr], dim=2).float()
 
-        # encode the concatenated input decodings -> B x L x H (hidden)
-        d_enc = self.encoder(torch.flatten(d_cat_sample,
-                                           start_dim=0,
-                                           end_dim=1))[1].squeeze(0).view(B, L, self.hidden_value_dim)
+            # sample from them (argmax over last dimension)
+            d_cat_sample = F.gumbel_softmax(d_cat, tau=self.gumbel_temperature, dim=-1, hard=True).float()
 
-        # unflatten batch and length on input sample
-        # d_cat_sample = d_cat_sample.view(B, L, 2*self.max_seq_len, vocab_size)
+            # represent in 1-hot: (BxL) x 2*max_seq_len x vocab size
+            # vocab_size = len(self.decoder.vocab)
+            # d_cat_sample = F.one_hot(d_cat_sample.flatten(),
+            #                          num_classes=vocab_size).view(B*L, 2*self.max_seq_len, vocab_size).float()
 
-        # decode the decoding template (a function specification):
-        # of the form s1, s2, ..., sk where each si is either a target
-        # vocabulary element or the index of an element of the (concatenated)
-        # input pair.  This template is interpreted to produce the output
-        # (either a target element or the indexed element from the input).
-        # like a pointer network.
-        # should be much easier for it to learn to do the syntactic operations
-        # (on sequences) like `opposite`, `twice`, `thrice` etc.
+            # encode the concatenated input decodings -> B x L x H (hidden)
+            d_enc = self.encoder(torch.flatten(d_cat_sample,
+                                            start_dim=0,
+                                            end_dim=1))[1].squeeze(0).view(B, L, self.hidden_value_dim)
 
-        # flatten the first two dimensions for the decoder -> B*L x H
-        d_enc = torch.flatten(d_enc, start_dim=0, end_dim=1)
+            # unflatten batch and length on input sample
+            # d_cat_sample = d_cat_sample.view(B, L, 2*self.max_seq_len, vocab_size)
 
-        # decode -> B x L x M x V, where M is max seq len and V is the size of the (augmented) x vocab
-        # last dimension holds logits
-        dt = self.decoder_dec.decode(d_enc, self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
+            # decode the decoding template (a function specification):
+            # of the form s1, s2, ..., sk where each si is either a target
+            # vocabulary element or the index of an element of the (concatenated)
+            # input pair.  This template is interpreted to produce the output
+            # (either a target element or the indexed element from the input).
+            # like a pointer network.
+            # should be much easier for it to learn to do the syntactic operations
+            # (on sequences) like `opposite`, `twice`, `thrice` etc.
 
-        # sample from it -> B x L x M
-        dt_sample = F.gumbel_softmax(dt, dim=-1, tau=self.gumbel_temperature, hard=True)
+            # flatten the first two dimensions for the decoder -> B*L x H
+            d_enc = torch.flatten(d_enc, start_dim=0, end_dim=1)
 
-        # apply decoder template to create the decoding (substituting input values for slots)
-        new_d = self.apply_decoder_template(dt, dt_sample, d_cat)
+            # decode -> B x L x M x V, where M is max seq len and V is the size of the (augmented) x vocab
+            # last dimension holds logits
+            dt = self.decoder_dec.decode(d_enc, self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
 
-        # homomorphic alignment:
-        #
-        # decode composite
-        dec_comp = self.decoder_sem.decode(torch.flatten(h_v, start_dim=0, end_dim=1),
-                                           self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
+            # sample from it -> B x L x M
+            dt_sample = F.gumbel_softmax(dt, dim=-1, tau=self.gumbel_temperature, hard=True)
 
-        # compute homomorphic loss for decoding:
-        decoding_hom_loss = kl_loss(torch.log_softmax(new_d, dim=-1), torch.softmax(dec_comp, dim=-1))
-        # TK DEBUG -- logits
-        decoding = (dec_comp + new_d) / 2.0
-        # decoding = F.gumbel_softmax(decoding, dim=-1, tau=self.gumbel_temperature, hard=True).float()
+            # apply decoder template to create the decoding (substituting input values for slots)
+            new_d = self.apply_decoder_template(dt, dt_sample, d_cat)
 
-        # TK DEBUG
-        # print("new_d: ", dec_comp)
+            # homomorphic alignment:
+            #
+            # decode composite
+            dec_comp = self.decoder_sem.decode(torch.flatten(h_v, start_dim=0, end_dim=1),
+                                            self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
+
+            # compute homomorphic loss for decoding:
+            decoding_hom_loss = kl_loss(torch.log_softmax(new_d, dim=-1), torch.softmax(dec_comp, dim=-1))
+            # TK DEBUG -- logits
+            decoding = (dec_comp + new_d) / 2.0
+            # decoding = F.gumbel_softmax(decoding, dim=-1, tau=self.gumbel_temperature, hard=True).float()
+
+            # TK DEBUG
+            # print("new_d: ", dec_comp)
 
         hom_loss = abstraction_hom_loss + decoding_hom_loss
 
@@ -413,7 +441,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                           max_length=max_depth)
         select_masks = []
         hom_loss_sum = 0
-
+        #print("input token:", input_tokens[0]) # debug
         if self.use_leaf_rnn:
             hs = []
             cs = []

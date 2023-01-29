@@ -248,56 +248,90 @@ class ScanTypes(IntEnum):
     A = 0
     T = 1
     M = 2
-    D = 3
-    Q = 4
-    I = 5
-    J = 6
-    C = 7
-    F = 8
-    G = 9
-    S = 10
-    E = 11
-    V = 12
+    N = 3
+    D = 4
+    P = 5
+    Q = 6
+    I = 7
+    J = 8
+    C1 = 9
+    C2 = 10
+    F = 11
+    G = 12
+    S1 = 13
+    S2 = 14
+    V1 = 15
+    V2 = 16
+    V3 = 17
+    V4 = 18
+    V5 = 19
+    V6 = 20
+    E1 = 21
+    E2 = 22
+    E3 = 23
+    E4 = 24
 
 
 scan_token_to_type = {
-    "twice": ScanTypes.Q,
+    "twice": ScanTypes.P,
     "thrice": ScanTypes.Q,
     "walk": ScanTypes.A,
     "look": ScanTypes.A,
     "run": ScanTypes.A,
     "jump": ScanTypes.A,
     "opposite": ScanTypes.M,
-    "around": ScanTypes.M,
+    "around": ScanTypes.N,
     "left": ScanTypes.D,
     "right": ScanTypes.D,
-    "and": ScanTypes.C,
-    "after": ScanTypes.C,
+    "and": ScanTypes.I,
+    "after": ScanTypes.J,
     "turn": ScanTypes.T,
-    "c": ScanTypes.C,
+    "c1": ScanTypes.C1,
+    "c2": ScanTypes.C2,
     "f": ScanTypes.F,
     "g": ScanTypes.G,
-    "s": ScanTypes.S,
-    "e": ScanTypes.E,
-    "v": ScanTypes.V
+    "s1": ScanTypes.S1,
+    "s2": ScanTypes.S2,
+    "v1": ScanTypes.V1,
+    "v2": ScanTypes.V2,
+    "v3": ScanTypes.V3,
+    "v4": ScanTypes.V4,
+    "v5": ScanTypes.V5,
+    "v6": ScanTypes.V6,
+    "e1": ScanTypes.E1,
+    "e2": ScanTypes.E2,
+    "e3": ScanTypes.E3,
+    "e4": ScanTypes.E4
 }
 
 scan_grammar = """
-    start: c | s | v | a
-    c: f s | g s | f a | f v | g a | g v
-    f: s i | a i | v i
-    g: s j | a j | v j
-    s: v q | a q
-    e: a m | t m
-    v: e d | a d | t d
+    start: c1 | c2 | s1 | s2 | v1 | v2 | v3 | v4 | v5 | v6 | a
+    c1: f s1 | f s2 | f a | f v1 | f v2 | f v3 | f v4 | f v5 | f v6
+    c2: g s1 | g s2 | g a | g v1 | g v2 | g v3 | g v4 | g v5 | g v6
+    f: s1 i | s2 i | a i | v1 i | v2 i | v3 i | v4 i | v5 i | v6 i
+    g: s1 j | s2 j | a j | v1 j | v2 j | v3 j | v4 j | v5 j | v6 j
+    s1: v1 p | v2 p | v3 p | v4 p | v5 p | v6 p | a p
+    s2: v1 q | v2 q | v3 q | v4 q | v5 q | v6 q | a q
+    v1: a d
+    v2: t d
+    v3: e1 d
+    v4: e2 d
+    v5: e3 d
+    v6: e4 d
+    e1: a m
+    e2: a n
+    e3: t m
+    e4: t n
     a: WALK | LOOK | RUN | JUMP
     t: TURN
-    m: OPPOSITE | AROUND
+    m: OPPOSITE
+    n: AROUND
     d: LEFT | RIGHT
-    q: TWICE | THRICE
+    p: TWICE
+    q: THRICE
     i: AND
     j: AFTER
-    
+
     AND: "and"
     AFTER: "after"
     TWICE: "twice"
@@ -329,10 +363,93 @@ def parse_scan(scan_command):
         if previous_index < node.meta.start_pos:
             current_position += 1
             previous_index = node.meta.start_pos
-        if node.data.value in ["a", "t", "m", "d", "q", "i", "j", "start"]:
+        if node.data.value in ["a", "t", "m", "n", "d", "p", "q", "i", "j", "start"]:
             continue
         positions.append(current_position)
         types.append(scan_token_to_type[node.data.value])
     return positions, types
 
-print(parse_scan("jump around left twice and walk opposite right thrice"))
+
+def get_decoding_force(dl, dr, target_types, positions):
+    B, L, M, V = dl.size()
+    dl_sample = dl.argmax(-1)
+    dr_sample = dr.argmax(-1)
+    length_l = torch.zeros(B, L).int()
+    length_r = torch.zeros(B, L).int()
+    for i in range(B):
+        for k in range(L):
+            length_l[i][k] = torch.count_nonzero(dl_sample[i][k])
+            length_r[i][k] = torch.count_nonzero(dr_sample[i][k])
+    templates = torch.zeros(B, L, M)
+    for i in range(B):
+        k = positions[i]
+        l = length_l[i][k]
+        r = length_r[i][k]
+        # To deal with paddings
+        if target_types[i] == 0:
+            templates[i][k][:l] = dl_sample[i][k][:l]
+        # (x_1 and) (x_2): x_1 x_2
+        if target_types[i] == 9:
+            templates[i][k][:l - 1] = dl_sample[i][k][:l - 1]
+            templates[i][k][l - 1:l + r - 1] = dr_sample[i][k][:r]
+        # (x_1 after) (x_2): x_2 x_1
+        if target_types[i] == 10:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+            templates[i][k][r:r + l - 1] = dl_sample[i][k][:l - 1]
+        # (x_1) (and): x_1 and
+        # (x_1) (after): x_1 after
+        if target_types[i] in [11, 12]:
+            templates[i][k][:l] = dl_sample[i][k][:l]
+            templates[i][k][l] = dr_sample[i][k][0]
+        # (x_1) (twice): x_1 x_1
+        if target_types[i] == 13:
+            templates[i][k][:l] = dl_sample[i][k][:l]
+            templates[i][k][l:l * 2] = dl_sample[i][k][:l]
+        # (x_1) (thrice): x_1 x_1 x_1s
+        if target_types[i] == 14:
+            templates[i][k][:l] = dl_sample[i][k][:l]
+            templates[i][k][l:l * 2] = dl_sample[i][k][:l]
+            templates[i][k][l * 2:l * 3] = dl_sample[i][k][:l]
+        # (x_1) (x_2): x_2 x_1
+        if target_types[i] == 15:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+            templates[i][k][r:r + l] = dl_sample[i][k][:l]
+        # (turn) (x_1): x_1
+        if target_types[i] == 16:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+        # (x_1 opposite) (x_2): x_2 x_2 x_1
+        if target_types[i] == 17:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+            templates[i][k][r:r * 2] = dr_sample[i][k][:r]
+            templates[i][k][r * 2:r * 2 + l - 1] = dl_sample[i][k][:l - 1]
+        # (x_1 around) (x_2): x_2 x_1 x_2 x_1 x_2 x_1 x_2 x_1
+        if target_types[i] == 18:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+            templates[i][k][r:r + l - 1] = dl_sample[i][k][:l - 1]
+            templates[i][k][r + l - 1:r * 2 + l - 1] = dr_sample[i][k][:r]
+            templates[i][k][r * 2 + l - 1:r * 2 + l * 2 - 2] = dl_sample[i][k][:l - 1]
+            templates[i][k][r * 2 + l * 2 - 2:r * 3 + l * 2 - 2] = dr_sample[i][k][:r]
+            templates[i][k][r * 3 + l * 2 - 2:r * 3 + l * 3 - 3] = dl_sample[i][k][:l - 1]
+            templates[i][k][r * 3 + l * 3 - 3:r * 4 + l * 3 - 3] = dr_sample[i][k][:r]
+            templates[i][k][r * 4 + l * 3 - 3:r * 4 + l * 4 - 4] = dl_sample[i][k][:l - 1]
+        # (turn opposite) (x_1): x_1 x_1
+        if target_types[i] == 19:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+            templates[i][k][r:r * 2] = dr_sample[i][k][:r]
+        # (turn around) (x_1): x_1 x_1 x_1 x_1
+        if target_types[i] == 20:
+            templates[i][k][:r] = dr_sample[i][k][:r]
+            templates[i][k][r:r * 2] = dr_sample[i][k][:r]
+            templates[i][k][r * 2:r * 3] = dr_sample[i][k][:r]
+            templates[i][k][r * 3:r * 4] = dr_sample[i][k][:r]
+        # (x_1) (opposite): x_1 opposite
+        # (x_1) (around): x_1 around
+        if target_types[i] in [21, 22]:
+            templates[i][k][:l] = dl_sample[i][k][:l]
+            templates[i][k][l] = dr_sample[i][k][0]
+        # (turn) (opposite): turn opposite
+        # (turn) (around): turn around
+        if target_types[i] in [23, 24]:
+            templates[i][k][0] = dl_sample[i][k][0]
+            templates[i][k][1] = dr_sample[i][k][0]
+    return templates

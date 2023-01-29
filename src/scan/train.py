@@ -14,7 +14,8 @@ from torch.nn import functional as F
 
 from src.scan.model import SCANModel
 
-from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim, parse_scan
+from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, \
+                          load_SCAN_add_jump_0, load_SCAN_add_jump_4, parse_scan
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
@@ -22,7 +23,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_length()
+    train_data, test_data = load_SCAN_add_jump_0()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train data set size: {len(train_data)}")
@@ -80,7 +81,7 @@ def train(args):
                       x_vocab=x_vocab,
                       word_dim=args.word_dim,
                       hidden_value_dim=args.hidden_dim,
-                      hidden_type_dim=13,
+                      hidden_type_dim=25,
                       decoder_hidden_dim=args.decoder_hidden_dim,
                       decoder_num_layers=args.decoder_num_layers,
                       use_leaf_rnn=args.leaf_rnn,
@@ -185,7 +186,7 @@ def train(args):
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
-    validate_every = 200
+    validate_every = 300
     best_vaild_accuacy = 0
     iter_count = 1
     train_accuracy_epoch = 0
