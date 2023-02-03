@@ -173,8 +173,10 @@ def train(args):
         loss = criterion(input=logits.reshape(B * N, V), target=expected_padded[:, :N].reshape(B * N))
         if is_training:
             optimizer.zero_grad()
+            if verbose:
+                print("semantic loss: %1.4f" % loss)
             if use_hom_loss:
-                hom_loss.backward(retain_graph=True)
+                loss = loss + hom_loss
             loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
@@ -186,12 +188,12 @@ def train(args):
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
     num_train_batches = train_loader.num_batches
-    validate_every = 300
+    validate_every = num_train_batches * 3
     best_vaild_accuacy = 0
     iter_count = 1
     train_accuracy_epoch = 0
     for _ in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_epoch > 0.99:
+        if args.use_curriculum and train_accuracy_epoch > 0.95:
             curriculum_stage += 1
             train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
             print(train_data_curriculum)
@@ -203,13 +205,26 @@ def train(args):
                                         y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                         max_x_seq_len=args.max_x_seq_len,
                                         max_y_seq_len=args.max_y_seq_len)
+
+            test_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), test_data))
+            print(test_data_curriculum)
+            preprocessed_valid_data = preprocess(test_data_curriculum, x_vocab, y_vocab)
+            valid_loader = MyDataLoader(preprocessed_valid_data,
+                                        batch_size=args.batch_size,
+                                        shuffle=False,
+                                        x_pad_idx=x_vocab.token_to_idx('<PAD>'),
+                                        y_pad_idx=y_vocab.token_to_idx('<PAD>'),
+                                        max_x_seq_len=args.max_x_seq_len,
+                                        max_y_seq_len=args.max_y_seq_len)
         train_accuracy_epoch = 0
         for batch_iter, train_batch in enumerate(train_loader):
+            print("\nstage: ", curriculum_stage)
             print("\niteration:", iter_count)
             if iter_count > -1:
                 train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
                                                                 is_training=True,
-                                                                use_hom_loss=True)
+                                                                use_hom_loss=True,
+                                                                verbose=True)
                 print("homomorphic loss: %1.4f" %hom_loss.item())
             else:
                 train_loss, train_accuracy, _ = run_iter(batch=train_batch,
@@ -224,7 +239,7 @@ def train(args):
             if (iter_count + 1) % 500 == 0:
                 model.reduce_gumbel_temp(iter_count)
 
-            if (batch_iter + 1) % validate_every == 0:
+            if (batch_iter + 1) % validate_every == 0 and train_accuracy_epoch > 0.95:
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
                 k = randint(0, num_valid_batches - 1)
@@ -233,7 +248,7 @@ def train(args):
                         valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
                                                                  verbose=True)
                     else:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch)
+                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch, verbose=True)
                     valid_loss_sum += valid_loss.item()
                     valid_accuracy_sum += valid_accuracy.item()
                 valid_loss = valid_loss_sum / num_valid_batches

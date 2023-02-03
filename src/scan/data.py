@@ -452,4 +452,5 @@ def get_decoding_force(dl, dr, target_types, positions):
         if target_types[i] in [23, 24]:
             templates[i][k][0] = dl_sample[i][k][0]
             templates[i][k][1] = dr_sample[i][k][0]
+
     return templates

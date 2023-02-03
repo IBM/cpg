@@ -4,7 +4,7 @@ from torch.nn import init
 import torch.nn.functional as F
 
 from src.model.treelstm import TypedBinaryTreeLSTM
-from src.scan.data import scan_word_to_type, scan_token_to_type
+from src.scan.data import scan_word_to_type, scan_token_to_type, Vocabulary
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, output_size, hidden_size, dropout_p=0.1, max_length=10, device='cpu'):
@@ -50,7 +50,7 @@ class Decoder(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.embedding = nn.Embedding(vocab.size(), input_dim)
+        self.embedding = nn.Embedding(input_dim, hidden_dim)
         self.gru = nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_dim, vocab.size())
 
@@ -80,11 +80,11 @@ class Decoder(nn.Module):
 
             outputs, hidden = self.forward(inputs, hidden)
 
-            #decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+            decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
             # TK -- changed from argmax
-            probs = torch.exp(outputs)
-            decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
-            decoded[unf_idxs, t] = decoded_idxs
+            # probs = torch.exp(outputs)
+            # decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
+            # decoded[unf_idxs, t] = decoded_idxs
 
             logits[unf_idxs, t, :] = outputs  # save logits for loss computation
 
@@ -98,6 +98,7 @@ class Decoder(nn.Module):
                 unf_idxs = unf_idxs[~is_finished]
                 if len(unf_idxs) > 0:
                     inputs = decoded_idxs[~is_finished]
+                    # TK FIXME: what do we do with hidden?
                     hidden = hidden[:, ~is_finished]
                 else:
                     break  # break if all sequences have reached '<EOS>'
@@ -155,8 +156,12 @@ class SCANModel(nn.Module):
 
         # x to x decoder
         # add max_seq_len slots to x vocab.  The slots are named "_0", "_1", ..., "_k" for k=2*max seq len
-        [x_vocab.add_token("_" + str(i)) for i in range(2*self.max_y_seq_len)]
-        self.decoder_sem = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        # TK DEBUG
+        # [x_vocab.add_token("_" + str(i)) for i in range(2*self.max_y_seq_len)]
+        # 3 is PADDING
+        template_vocab = Vocabulary()
+        template_vocab.add_tokens({'1', '2', '<UNK>', '<SOS>', '<EOS>'})
+        self.decoder_sem = Decoder(template_vocab, hidden_type_dim, hidden_type_dim, decoder_num_layers)
         self.decoder_dec = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
                                            hidden_value_dim=hidden_value_dim,
@@ -183,7 +188,8 @@ class SCANModel(nn.Module):
 
     def forward(self, x, length, force=None, positions_force=None, types_force=None):
         x_embed = self.embedding(x)
-        x_embed = self.dropout(x_embed)
+        # TK DEBUG
+        # x_embed = self.dropout(x_embed)
         sentence_vector, _, decoding_x, hom_loss = self.encoder(input=x_embed,
                                                                 length=length,
                                                                 input_tokens=x,
