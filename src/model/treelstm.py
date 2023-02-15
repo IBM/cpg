@@ -143,15 +143,16 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                 length_r = torch.count_nonzero(dr_sample[i][k]).tolist()
                 idx = 0
                 for t in range(K):  # template index
-                    if length_l != 0 and dt_sample[i][k][idx:idx+length_l].tolist() == 3:     # left
+                    if length_l != 0 and idx+length_l <= M and dt_sample[i][k][t].tolist() == 3:     # left
                         result[i][k][idx:idx+length_l] = dl_sample[i][k][:length_l]
                         idx = idx+length_l
-                    elif length_r != 0 and dt_sample[i][k][idx:idx+length_r].tolist() == 4:   # right
+                    elif length_r != 0 and idx+length_r <= M and dt_sample[i][k][t].tolist() == 4:   # right
                         result[i][k][idx:idx+length_r] = dr_sample[i][k][:length_r]
                         idx = idx+length_r
                     else:  # anything else: <SOS>, <EOS>, <UNK>
-                        result[i][k][idx] = 0 # <UNK>
+                        # result[i][k][idx] = 0 # <UNK>
                         idx += 1
+                        pass
 
         return result
 
@@ -237,11 +238,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # decode composite
         new_h_type_hard = F.gumbel_softmax(new_h_type, tau=self.gumbel_temperature, dim=-1, hard=True).float()
         # TK FIXME -- add this somewhere
-        K = 3
+        K = 8
         dt = self.decoder_sem.decode(torch.flatten(new_h_type_hard, start_dim=0, end_dim=1), K)[1]
+        B, L, T = new_h_type.shape
         dt = dt.view(B, L, K, self.decoder_sem.vocab.size())
 
-        B, L, T = new_h_type.shape
         # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
         # B = batch size, L = sentence length, M = max decoded seq len
         # last dimension holds logits

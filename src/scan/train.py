@@ -15,7 +15,8 @@ from torch.nn import functional as F
 from src.scan.model import SCANModel
 
 from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, \
-                          load_SCAN_add_jump_0, load_SCAN_add_jump_4, parse_scan
+                          load_SCAN_add_jump_0, load_SCAN_add_jump_4, parse_scan, \
+        load_SCAN_add_jump_0_no_jump_oversampling
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
@@ -23,7 +24,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test data
-    train_data, test_data = load_SCAN_add_jump_0()
+    train_data, test_data = load_SCAN_add_jump_0_no_jump_oversampling()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train data set size: {len(train_data)}")
@@ -53,12 +54,20 @@ def train(args):
         return True
 
     if args.use_curriculum:
-        curriculum_stage = 0
-        train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
+        # TK DEBUG -- changed from 0
+        curriculum_stage = 1
+        # filter_fn = lambda x: select(x, curriculum_stage)
+        filter_fn = lambda x: len(x[0]) <= curriculum_stage
+        train_data_curriculum = list(filter(filter_fn, train_data))
         print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
+        valid_data_curriculum = list(filter(filter_fn, test_data))
+        print(valid_data_curriculum)
+        preprocessed_valid_data = preprocess(valid_data_curriculum, x_vocab, y_vocab)
+
     else:
         preprocessed_train_data = preprocess(train_data, x_vocab, y_vocab)
+        preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     train_loader = MyDataLoader(preprocessed_train_data,
                                 batch_size=args.batch_size,
                                 shuffle=False,
@@ -67,7 +76,6 @@ def train(args):
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len)
 
-    preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
                                 shuffle=False,
@@ -187,15 +195,18 @@ def train(args):
             value = value.item()
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
-    num_train_batches = train_loader.num_batches
-    validate_every = num_train_batches * 3
+    # num_train_batches = train_loader.num_batches
+    # validate_every = num_train_batches * 3
     best_vaild_accuacy = 0
     iter_count = 1
-    train_accuracy_epoch = 0
-    for _ in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_epoch > 0.95:
+    train_accuracy_epoch_total = 0.0
+    train_accuracy_epoch = 0.0
+    for e in range(args.max_epoch):
+        if args.use_curriculum and train_accuracy_epoch > .9:
             curriculum_stage += 1
-            train_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), train_data))
+            #filter = lambda x: select(x, curriculum_stage
+            filter_fn = lambda x: len(x[0]) <= curriculum_stage
+            train_data_curriculum = list(filter(filter_fn, train_data))
             print(train_data_curriculum)
             preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
             train_loader = MyDataLoader(preprocessed_train_data,
@@ -206,7 +217,7 @@ def train(args):
                                         max_x_seq_len=args.max_x_seq_len,
                                         max_y_seq_len=args.max_y_seq_len)
 
-            test_data_curriculum = list(filter(lambda x: select(x, curriculum_stage), test_data))
+            test_data_curriculum = list(filter(filter_fn, test_data))
             print(test_data_curriculum)
             preprocessed_valid_data = preprocess(test_data_curriculum, x_vocab, y_vocab)
             valid_loader = MyDataLoader(preprocessed_valid_data,
@@ -216,9 +227,11 @@ def train(args):
                                         y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                         max_x_seq_len=args.max_x_seq_len,
                                         max_y_seq_len=args.max_y_seq_len)
-        train_accuracy_epoch = 0
+            train_accuracy_epoch_total = 0.0
+            # TK worst_train_accuracy_epoch = 0.0
         for batch_iter, train_batch in enumerate(train_loader):
-            print("\nstage: ", curriculum_stage)
+            if args.use_curriculum:
+                print("\nstage: ", curriculum_stage)
             print("\niteration:", iter_count)
             if iter_count > -1:
                 train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
@@ -229,17 +242,26 @@ def train(args):
             else:
                 train_loss, train_accuracy, _ = run_iter(batch=train_batch,
                                                          is_training=True)
-            train_accuracy_epoch += train_accuracy / num_train_batches
-            print("semantic loss: %1.4f" %train_loss.item())
-            print("train accuracy: %1.4f" %train_accuracy.item())
-            iter_count += 1
+            train_accuracy_epoch_total += train_accuracy
+            train_accuracy_epoch = train_accuracy_epoch_total / (iter_count+1)
+            # if train_accuracy_epoch < worst_train_accuracy_epoch:
+            #     worst_train_accuracy_epoch = train_accuracy_epoch
+
+            print("iteration semantic loss: %1.4f" %train_loss.item())
+            print("iteration train accuracy: %1.4f" %train_accuracy.item())
+            print("average train accuracy for the epoch: %1.4f" % train_accuracy_epoch)
+            # print("worst batch training accuracy for the epoch: %1.4f" % worst_train_accuracy_epoch)
             add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
             add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
 
+            iter_count += 1
             if (iter_count + 1) % 500 == 0:
                 model.reduce_gumbel_temp(iter_count)
-
-            if (batch_iter + 1) % validate_every == 0 and train_accuracy_epoch > 0.95:
+            # TK DEBUG
+            if iter_count == 1000:
+                pass
+            # validate every epoch at the start
+            if e % 3 == 0 and batch_iter == 1 and train_accuracy_epoch > 0.95:
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
                 k = randint(0, num_valid_batches - 1)
@@ -258,6 +280,9 @@ def train(args):
                 scheduler.step(valid_accuracy)
                 progress = iter_count / train_loader.num_batches
                 logging.info(f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
+                # TK DEBUG
+                print("semantic loss: %1.4f" % valid_loss)
+                print("train accuracy: %1.4f" % valid_accuracy)
                 if valid_accuracy > best_vaild_accuacy:
                     best_vaild_accuacy = valid_accuracy
                     model_filename = (f'model-{progress:.2f}'

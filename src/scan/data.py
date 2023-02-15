@@ -29,6 +29,8 @@ SCAN_ADD_JUMP_4_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/m
 SCAN_ADD_JUMP_4_TRAIN_FILEPATH = "./data/SCAN_add_jump_4_train.txt"
 SCAN_ADD_JUMP_4_TEST_FILEPATH = "./data/SCAN_add_jump_4_test.txt"
 
+SCAN_ADD_JUMP_0_NO_JUMP_OVERSAMPLING_FILEPATH = "./src/scan/data/SCAN_add_jump_0_train_no_jump_oversampling.txt"
+
 TK_SIMPLE_TRAIN_FILEPATH = "./data/simple_train.txt"
 TK_SIMPLE_TEST_FILEPATH = "./data/simple_test.txt"
 
@@ -96,6 +98,11 @@ def load_SCAN_add_jump_4():
     if not os.path.exists(SCAN_ADD_JUMP_4_TEST_FILEPATH):
         download_file(SCAN_ADD_JUMP_4_TEST_URL, SCAN_ADD_JUMP_4_TEST_FILEPATH, verbose=True)
     return load_SCAN(SCAN_ADD_JUMP_4_TRAIN_FILEPATH, SCAN_ADD_JUMP_4_TEST_FILEPATH)
+
+def load_SCAN_add_jump_0_no_jump_oversampling():
+    if not os.path.exists(SCAN_ADD_JUMP_4_TEST_FILEPATH):
+        download_file(SCAN_ADD_JUMP_4_TEST_URL, SCAN_ADD_JUMP_4_TEST_FILEPATH, verbose=True)
+    return load_SCAN(SCAN_ADD_JUMP_0_NO_JUMP_OVERSAMPLING_FILEPATH, SCAN_ADD_JUMP_4_TEST_FILEPATH)
 
 
 @dataclass
