@@ -89,7 +89,7 @@ def train(args):
                       x_vocab=x_vocab,
                       word_dim=args.word_dim,
                       hidden_value_dim=args.hidden_dim,
-                      hidden_type_dim=25,
+                      hidden_type_dim=26,
                       decoder_hidden_dim=args.decoder_hidden_dim,
                       decoder_num_layers=args.decoder_num_layers,
                       use_leaf_rnn=args.leaf_rnn,

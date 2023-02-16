@@ -277,6 +277,7 @@ class ScanTypes(IntEnum):
     E2 = 22
     E3 = 23
     E4 = 24
+    PAD = 25
 
 
 scan_token_to_type = {
@@ -308,7 +309,8 @@ scan_token_to_type = {
     "e1": ScanTypes.E1,
     "e2": ScanTypes.E2,
     "e3": ScanTypes.E3,
-    "e4": ScanTypes.E4
+    "e4": ScanTypes.E4,
+    "<PAD>": ScanTypes.PAD
 }
 
 scan_grammar = """
@@ -393,7 +395,7 @@ def get_decoding_force(dl, dr, target_types, positions):
         l = length_l[i][k]
         r = length_r[i][k]
         # To deal with paddings
-        if target_types[i] == 0:
+        if target_types[i] == 25:
             templates[i][k][:l] = dl_sample[i][k][:l]
         # (x_1 and) (x_2): x_1 x_2
         if target_types[i] == 9:
