@@ -200,7 +200,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             positions = torch.zeros(B).long()
             for i in range(B):
                 if positions_force[i] == []:
-                    positions[i] = 0
+                    positions[i] = 0 # default to start
                 else:
                     positions[i] = positions_force[i][-1]
             abstraction_hom_loss = F.cross_entropy(torch.clamp(new_h_type[torch.arange(B), positions].view(B, T),
@@ -234,8 +234,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         new_h_type_hard = F.gumbel_softmax(new_h_type, tau=self.gumbel_temperature, dim=-1, hard=True).float()
         # TK FIXME -- add this somewhere
         K = 8
-        dt, _ = self.decoder_sem.decode(torch.flatten(new_h_type_hard, start_dim=0, end_dim=1), K)
         B, L, T = new_h_type.shape
+        target_types_ohe = F.one_hot(target_types.unsqueeze(1).repeat(1, L), 26).float()
+        dt, _ = self.decoder_sem.decode(torch.flatten(target_types_ohe, start_dim=0, end_dim=1), K)
         dt = dt.view(B, L, K)
 
         # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
@@ -535,7 +536,7 @@ class TypedBinaryTreeLSTM(nn.Module):
             B, _, _ = h.size()
             if types_force != None:
                 # get target types for this step and remove them
-                target_types = torch.zeros(B)
+                target_types = torch.tensor([25 for i in range(B)]) # default to start
                 for k in range(len(types_force)):
                     if types_force[k] != []:
                         target_types[k] = types_force[k][-1]
