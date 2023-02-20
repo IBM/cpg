@@ -205,7 +205,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             positions = torch.zeros(B).long()
             for i in range(B):
                 if positions_force[i] == []:
-                    positions[i] = 0
+                    positions[i] = 0 # default to start
                 else:
                     positions[i] = positions_force[i][-1]
             abstraction_hom_loss = F.cross_entropy(torch.clamp(new_h_type[torch.arange(B), positions].view(B, T),
@@ -257,7 +257,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_dec, x_vocab_size, is_lstm=False,
+                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_dec, is_lstm=False,
                  scan_token_to_type_map=None, input_tokens=None, positions_force=None, types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
@@ -273,7 +273,6 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
         self.decoder_dec = decoder_dec
-        self.x_vocab_size = x_vocab_size
         self.positions_force = positions_force
         self.types_force = types_force
 
@@ -457,7 +456,9 @@ class TypedBinaryTreeLSTM(nn.Module):
             state_v = self.word_linear(input)
             h_v, c = state_v.chunk(chunks=2, dim=2)
             h_t_samples, h_t = self.type_predictor(h_v)
-            target_vocab_size = self.x_vocab_size
+            # decode each word separately ((B*L), max_seq_len, target vocab size)
+            # reshape to B x L x max_seq_len x len(decoder.vocab)
+            target_vocab_size = len(self.decoder_dec.vocab)  # includes max seq len slots variables "_i"
             B, L = input_tokens.size()
             initial_decodings = torch.zeros(B, L, self.max_seq_len)
             initial_decodings[:, :, 0] = input_tokens
@@ -465,7 +466,6 @@ class TypedBinaryTreeLSTM(nn.Module):
                                           num_classes=target_vocab_size).view(B, L,
                                                                               self.max_seq_len,
                                                                               target_vocab_size)
-            dt_all = None
             if self.scan_token_to_type_map is not None:
                 # compute cross entropy loss of predicted type against the oracle
                 B, L, T_t = h_t.shape
@@ -487,7 +487,7 @@ class TypedBinaryTreeLSTM(nn.Module):
             B, _, _ = h.size()
             if types_force != None:
                 # get target types for this step and remove them
-                target_types = torch.zeros(B)
+                target_types = torch.tensor([25 for i in range(B)]) # default to start
                 for k in range(len(types_force)):
                     if types_force[k] != []:
                         target_types[k] = types_force[k][-1]
