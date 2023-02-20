@@ -215,14 +215,11 @@ class SCANModel(nn.Module):
                 self.scan_token_to_type_map[token_idx] = type
         # x to y decoder
         self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
-
-        # x to x decoder
-        # add max_seq_len slots to x vocab.  The slots are named "_0", "_1", ..., "_k" for k=2*max seq len
-        # TK DEBUG
-        # [x_vocab.add_token("_" + str(i)) for i in range(2*self.max_y_seq_len)]
-        # 3 is PADDING
-        self.decoder_sem = templateDecoder(hidden_type_dim, hidden_type_dim, decoder_num_layers)
+        # template decoder
+        self.decoder_sem = templateDecoder(decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        # not currently used
         self.decoder_dec = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        # model
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
                                            hidden_value_dim=hidden_value_dim,
                                            hidden_type_dim=hidden_type_dim,
@@ -233,6 +230,7 @@ class SCANModel(nn.Module):
                                            max_seq_len=self.max_y_seq_len,
                                            decoder_sem=self.decoder_sem,
                                            decoder_dec=self.decoder_dec,
+                                           x_vocab_size=len(x_vocab),
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
@@ -242,6 +240,9 @@ class SCANModel(nn.Module):
     def reduce_gumbel_temp(self, iter):
         self.encoder.reduce_gumbel_temp(iter)
 
+    def reset_gumbel_temp(self, new_temp):
+        self.encoder.reset_gumbel_temp(new_temp)
+
     def reset_parameters(self):
         init.normal_(self.embedding.weight.data, mean=0, std=0.01)
         self.encoder.reset_parameters()
@@ -250,7 +251,7 @@ class SCANModel(nn.Module):
         x_embed = self.embedding(x)
         # TK DEBUG
         # x_embed = self.dropout(x_embed)
-        sentence_vector, _, decoding_x, hom_loss = self.encoder(input=x_embed,
+        sentence_vector, _, decoding_x, hom_loss, dt_all = self.encoder(input=x_embed,
                                                                 length=length,
                                                                 input_tokens=x,
                                                                 positions_force=positions_force,
@@ -261,4 +262,4 @@ class SCANModel(nn.Module):
         # encode the x vocab decoding
         enc_x = self.lstm_encoder(decoding_x)[1][0].squeeze(0)
         outputs, logits = self.decoder_target.decode(enc_x, self.max_y_seq_len, force)
-        return outputs, logits, decoding_x, hom_loss
+        return outputs, logits, decoding_x, hom_loss, dt_all

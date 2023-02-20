@@ -149,7 +149,7 @@ def train(args):
             force = batch_y
         else:
             force = None
-        outputs, logits, decoding_x, hom_loss = model(x=batch_x, length=torch.full((B, 1), L).view(B),
+        outputs, logits, decoding_x, hom_loss, dt_all = model(x=batch_x, length=torch.full((B, 1), L).view(B),
                                           force=force, positions_force=positions_force, types_force=types_force)
         if verbose:
             input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
@@ -165,20 +165,30 @@ def train(args):
         _, M = batch_y.size()
         if N >= M:
             # pad expected
-            expected_padded = torch.full((B, N), y_vocab.token_to_idx('<PAD>'))
+            expected_padded = torch.full((B, N), float(y_vocab.token_to_idx('<PAD>')))
             expected_padded[:, :M] = batch_y
             outputs_padded = outputs
         else:
             # pad outputs
             expected_padded = batch_y
-            outputs_padded = torch.full((B, M), y_vocab.token_to_idx('<PAD>'))
+            outputs_padded = torch.full((B, M), float(y_vocab.token_to_idx('<PAD>')))
             outputs_padded[:, :N] = outputs
         # measure accuracy
-        match = torch.eq(expected_padded, outputs_padded).float()
+        match = torch.eq(expected_padded.float(), outputs_padded.float())
+        success = torch.eq(match.sum(1), match.size(1)).float()
         match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
+        # dt-all: B x ? x 8 (probs -- verify)
+        # match: B x max_len (49)
+        # success: B
+        # probs, idx: B x ?
+        probs, _ = torch.max(dt_all, dim=-1)
+        log_probs = torch.clamp(probs, min=1.0e-20, max=1.0).log()
+        B, T, temp_vocab_size = probs.size()
+        success_per_decoding = success.unsqueeze(1).unsqueeze(2).expand(B, T, temp_vocab_size)
+        template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
         accuracy = torch.tensor(match).mean()
         # compute loss
-        loss = criterion(input=logits.reshape(B * N, V), target=expected_padded[:, :N].reshape(B * N))
+        loss = criterion(input=logits.reshape(B * N, V), target=expected_padded[:, :N].reshape(B * N).long())
         if is_training:
             optimizer.zero_grad()
             if verbose:
@@ -186,6 +196,7 @@ def train(args):
             if use_hom_loss:
                 loss = loss + hom_loss
             loss.backward()
+            template_loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
         return loss, accuracy, hom_loss
@@ -204,6 +215,7 @@ def train(args):
     for e in range(args.max_epoch):
         if args.use_curriculum and train_accuracy_epoch > .9:
             curriculum_stage += 1
+            model.reset_gumbel_temp(1.0)
             #filter = lambda x: select(x, curriculum_stage
             filter_fn = lambda x: len(x[0]) <= curriculum_stage
             train_data_curriculum = list(filter(filter_fn, train_data))

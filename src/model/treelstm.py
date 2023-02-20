@@ -3,7 +3,7 @@ import math
 import torch
 from torch import nn
 from torch.distributions import Categorical
-from torch.nn import init
+from torch.nn import init, Embedding
 import torch.nn.functional as F
 from torch.nn import functional as F
 
@@ -107,6 +107,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.vocab_size = len(self.decoder_dec.vocab)
         self.encoder = nn.GRU(self.vocab_size, self.hidden_value_dim, batch_first=True)
         self.gumbel_temperature = gumbel_temperature
+        self.type_embedding = nn.Embedding(num_embeddings=self.hidden_type_dim,
+                                           embedding_dim=self.hidden_value_dim)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -149,6 +151,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     elif length_r != 0 and idx+length_r <= M and dt_sample[i][k][t].tolist() == 1:   # right
                         result[i][k][idx:idx+length_r] = dr_sample[i][k][:length_r]
                         idx = idx+length_r
+                    elif length_l != 0 and length_r != 0 and idx > 0:
+                        result[i][k][idx:] = 0 # PAD
+                        break
         return result
 
 
@@ -227,90 +232,32 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             # compute output hidden state
             new_h = torch.cat([h_v, new_h_type], dim=2)
 
-        # if target_types != None:
-        #     dt = self.get_decoding_template(new_h, positions)
-        # else:
-        # decode composite
-        new_h_type_hard = F.gumbel_softmax(new_h_type, tau=self.gumbel_temperature, dim=-1, hard=True).float()
-        # TK FIXME -- add this somewhere
+        new_h_type_idx = new_h_type.argmax(-1).long()
+        #new_h_type_idx = F.gumbel_softmax(type_logits, tau=self.gumbel_temperature, dim=-1, hard=True).argmax(-1).long()
+        type_embedding = self.type_embedding(new_h_type_idx)
+        # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
         K = 8
-        dt, _ = self.decoder_sem.decode(torch.flatten(new_h_type_hard, start_dim=0, end_dim=1), K)
+        _, dt = self.decoder_sem.decode(torch.flatten(type_embedding, start_dim=0, end_dim=1), K)
         B, L, T = new_h_type.shape
-        dt = dt.view(B, L, K)
+        dt = dt.view(B, L, K, 3)
+        dt_sample = dt.argmax(-1)
+        # TK DEBUG
+        #print(list(self.decoder_sem.gru.parameters())[0])
 
         # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
         # B = batch size, L = sentence length, M = max decoded seq len
         # last dimension holds logits
         d_cat = torch.cat([dl, dr], dim=2).float()
-
-        # sample from them (argmax over last dimension)
-        #d_cat_sample = F.gumbel_softmax(d_cat, tau=self.gumbel_temperature, dim=-1, hard=True).float()
-
-        # decode template function from semantic value
-        # dec_comp = self.decoder_sem.decode(torch.flatten(h_v, start_dim=0, end_dim=1), self.max_seq_len)[1]
-        # dec_comp = dec_comp.view(B, L, self.max_seq_len, self.vocab_size)
-
-        # represent in 1-hot: (BxL) x 2*max_seq_len x vocab size
-        # vocab_size = len(self.decoder.vocab)
-        # d_cat_sample = F.one_hot(d_cat_sample.flatten(),
-        #                          num_classes=vocab_size).view(B*L, 2*self.max_seq_len, vocab_size).float()
-
-        # encode the concatenated input decodings -> B x L x H (hidden)
-        # d_enc = self.encoder(torch.flatten(d_cat_sample,
-        #                                 start_dim=0,
-        #                                 end_dim=1))[1].squeeze(0).view(B, L, self.hidden_value_dim)
-
-        # unflatten batch and length on input sample
-        # d_cat_sample = d_cat_sample.view(B, L, 2*self.max_seq_len, vocab_size)
-
-        # decode the decoding template (a function specification):
-        # of the form s1, s2, ..., sk where each si is either a target
-        # vocabulary element or the index of an element of the (concatenated)
-        # input pair.  This template is interpreted to produce the output
-        # (either a target element or the indexed element from the input).
-        # like a pointer network.
-        # should be much easier for it to learn to do the syntactic operations
-        # (on sequences) like `opposite`, `twice`, `thrice` etc.
-
-        # flatten the first two dimensions for the decoder -> B*L x H
-        # d_enc = torch.flatten(d_enc, start_dim=0, end_dim=1)
-
-        # decode -> B x L x M x V, where M is max seq len and V is the size of the (augmented) x vocab
-        # last dimension holds logits
-        # dt = self.decoder_dec.decode(d_enc, self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
-        #
-        # # sample from it -> B x L x M
-
-        # sample from the template
-        #dt_sample = F.gumbel_softmax(dt, dim=-1, tau=self.gumbel_temperature, hard=True).argmax(-1)
-
-        # apply decoder template to create the decoding (substituting input values for slots)
-        new_d = self.apply_decoder_template(dt, d_cat).long()
-
-        # # homomorphic alignment:
-        # #
-        # # decode composite
-        # dec_comp = self.decoder_sem.decode(torch.flatten(h_v, start_dim=0, end_dim=1),
-        #                                 self.max_seq_len)[1].view(B, L, self.max_seq_len, self.vocab_size)
-        #
-        # # compute homomorphic loss for decoding:
-        # decoding_hom_loss = kl_loss(torch.log_softmax(new_d, dim=-1), torch.softmax(dec_comp, dim=-1))
-        # # TK DEBUG -- logits
-        # decoding = (dec_comp + new_d) / 2.0
+        new_d = self.apply_decoder_template(dt_sample, d_cat).long()
         decoding = F.one_hot(torch.flatten(new_d, start_dim=0, end_dim=1),
                              num_classes=self.vocab_size).view(B, L, self.max_seq_len, self.vocab_size)
 
-        # TK DEBUG
-        # print("new_d: ", dec_comp)
-
-        # hom_loss = abstraction_hom_loss + decoding_hom_loss
-
-        return (new_h, c, decoding), abstraction_hom_loss
+        return (new_h, c, decoding), abstraction_hom_loss, dt
 
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_dec, is_lstm=False,
+                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_dec, x_vocab_size, is_lstm=False,
                  scan_token_to_type_map=None, input_tokens=None, positions_force=None, types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
@@ -326,6 +273,7 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
         self.decoder_dec = decoder_dec
+        self.x_vocab_size = x_vocab_size
         self.positions_force = positions_force
         self.types_force = types_force
 
@@ -364,8 +312,13 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.reset_parameters()
 
     def reduce_gumbel_temp(self, it):
-        self.type_predictor.reduce_gumbel_temp(0.0003, it, verbose=True)
-        self.binary_type_predictor.reduce_gumbel_temp(0.0003, it, verbose=True)
+        # TK DEBUG 0.0003 -> 0.00003
+        self.type_predictor.reduce_gumbel_temp(0.00003, it, verbose=True)
+        self.binary_type_predictor.reduce_gumbel_temp(0.00003, it, verbose=True)
+
+    def reset_gumbel_temp(self, new_temp):
+        self.type_predictor.gumbel_temp = new_temp
+        self.binary_type_predictor.gumbel_temp = new_temp
 
     def reset_parameters(self):
         if self.use_leaf_rnn:
@@ -504,9 +457,7 @@ class TypedBinaryTreeLSTM(nn.Module):
             state_v = self.word_linear(input)
             h_v, c = state_v.chunk(chunks=2, dim=2)
             h_t_samples, h_t = self.type_predictor(h_v)
-            # decode each word separately ((B*L), max_seq_len, target vocab size)
-            # reshape to B x L x max_seq_len x len(decoder.vocab)
-            target_vocab_size = len(self.decoder_dec.vocab)  # includes max seq len slots variables "_i"
+            target_vocab_size = self.x_vocab_size
             B, L = input_tokens.size()
             initial_decodings = torch.zeros(B, L, self.max_seq_len)
             initial_decodings[:, :, 0] = input_tokens
@@ -514,6 +465,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                           num_classes=target_vocab_size).view(B, L,
                                                                               self.max_seq_len,
                                                                               target_vocab_size)
+            dt_all = None
             if self.scan_token_to_type_map is not None:
                 # compute cross entropy loss of predicted type against the oracle
                 B, L, T_t = h_t.shape
@@ -543,9 +495,13 @@ class TypedBinaryTreeLSTM(nn.Module):
             else:
                 target_types = None
 
-            new_state, hom_loss = self.treelstm_layer(l=l, r=r, positions_force=positions_force,
+            new_state, hom_loss, dt = self.treelstm_layer(l=l, r=r, positions_force=positions_force,
                                                                                   target_types=target_types)
             hom_loss_sum += hom_loss
+            if dt_all is None:
+                dt_all = dt
+            else:
+                dt_all = torch.concat((dt_all, dt), dim=1)
             if i < max_depth - 2:
                 # We don't need to greedily select the composition in the
                 # last iteration, since it has only one option left.
@@ -586,6 +542,6 @@ class TypedBinaryTreeLSTM(nn.Module):
             h = (att_weights_expand * nodes).sum(1)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all
         else:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, select_masks
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, select_masks
