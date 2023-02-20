@@ -312,8 +312,8 @@ class TypedBinaryTreeLSTM(nn.Module):
 
     def reduce_gumbel_temp(self, it):
         # TK DEBUG 0.0003 -> 0.00003
-        self.type_predictor.reduce_gumbel_temp(0.00003, it, verbose=True)
-        self.binary_type_predictor.reduce_gumbel_temp(0.00003, it, verbose=True)
+        self.type_predictor.reduce_gumbel_temp(0.001, it, verbose=True)
+        self.binary_type_predictor.reduce_gumbel_temp(0.001, it, verbose=True)
 
     def reset_gumbel_temp(self, new_temp):
         self.type_predictor.gumbel_temp = new_temp
@@ -466,6 +466,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                           num_classes=target_vocab_size).view(B, L,
                                                                               self.max_seq_len,
                                                                               target_vocab_size)
+            dt_all = None
             if self.scan_token_to_type_map is not None:
                 # compute cross entropy loss of predicted type against the oracle
                 B, L, T_t = h_t.shape
