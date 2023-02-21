@@ -149,30 +149,31 @@ def train(args):
             force = batch_y
         else:
             force = None
-        outputs, logits, decoding_x, hom_loss, dt_all = model(x=batch_x, length=torch.full((B, 1), L).view(B),
-                                          force=force, positions_force=positions_force, types_force=types_force)
+        decoding, hom_loss, dt_all, logits_init = model(x=batch_x, length=torch.full((B, 1), L).view(B),
+                                                        force=force, positions_force=positions_force, types_force=types_force)
+        decoding_idx = decoding.argmax(-1)
         if verbose:
             input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
             expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
-            decoded = y_vocab.decode_batch(outputs.numpy(), outputs != y_vocab.token_to_idx('<PAD>'))
+            decoded = y_vocab.decode_batch(decoding_idx.numpy(), decoding_idx != y_vocab.token_to_idx('<PAD>'))
             print("--------------------------------")
             for i in range(B):
                 print("input: ", ", ".join(input[i]), "\n")
                 print("expected: ", ", ".join(expected[i]), "\n")
                 print("decoded: ", ", ".join(decoded[i]))
                 print("--------------------------------")
-        _, N, V = logits.size()
+        _, N, V = decoding.size()
         _, M = batch_y.size()
         if N >= M:
             # pad expected
             expected_padded = torch.full((B, N), float(y_vocab.token_to_idx('<PAD>')))
             expected_padded[:, :M] = batch_y
-            outputs_padded = outputs
+            outputs_padded = decoding_idx
         else:
             # pad outputs
             expected_padded = batch_y
             outputs_padded = torch.full((B, M), float(y_vocab.token_to_idx('<PAD>')))
-            outputs_padded[:, :N] = outputs
+            outputs_padded[:, :N] = decoding_idx
         # measure accuracy
         match = torch.eq(expected_padded.float(), outputs_padded.float())
         success = torch.eq(match.sum(1), match.size(1)).float()
@@ -186,20 +187,22 @@ def train(args):
         B, T, temp_vocab_size = probs.size()
         success_per_decoding = success.unsqueeze(1).unsqueeze(2).expand(B, T, temp_vocab_size)
         template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
+        # compute loss for initial decodings
+        log_probs_init = torch.clamp(logits_init, min=1.0e-20, max=1.0).log()
+        K, T, M = logits_init.size()
+        success_per_decoding = success.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand(B, int(K/B), T, M).reshape(K, T, M)
+        template_loss += ((success_per_decoding * -log_probs_init) + (1-success_per_decoding) * log_probs_init).mean()
         accuracy = torch.tensor(match).mean()
         # compute loss
-        loss = criterion(input=logits.reshape(B * N, V), target=expected_padded[:, :N].reshape(B * N).long())
         if is_training:
             optimizer.zero_grad()
-            if verbose:
-                print("semantic loss: %1.4f" % loss)
+            loss = template_loss
             if use_hom_loss:
-                loss = loss + hom_loss
+                loss += hom_loss
             loss.backward()
-            template_loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
-        return loss, accuracy, hom_loss
+        return template_loss, accuracy, hom_loss
 
     def add_scalar_summary(summary_writer, name, value, step):
         if torch.is_tensor(value):
@@ -259,7 +262,7 @@ def train(args):
             # if train_accuracy_epoch < worst_train_accuracy_epoch:
             #     worst_train_accuracy_epoch = train_accuracy_epoch
 
-            print("iteration semantic loss: %1.4f" %train_loss.item())
+            print("iteration template loss: %1.4f" %train_loss.item())
             print("iteration train accuracy: %1.4f" %train_accuracy.item())
             print("average train accuracy for the epoch: %1.4f" % train_accuracy_epoch)
             # print("worst batch training accuracy for the epoch: %1.4f" % worst_train_accuracy_epoch)

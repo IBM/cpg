@@ -92,7 +92,7 @@ class TypePredictor(nn.Module):
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
     def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor, binary_type_predictor,
-                 max_seq_len, decoder_sem, decoder_dec, gumbel_temperature):
+                 max_seq_len, decoder_sem, decoder_init, gumbel_temperature):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
@@ -103,8 +103,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.binary_type_predictor = binary_type_predictor
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
-        self.decoder_dec = decoder_dec
-        self.vocab_size = len(self.decoder_dec.vocab)
+        self.decoder_init = decoder_init
+        self.vocab_size = len(self.decoder_init.vocab)
         self.encoder = nn.GRU(self.vocab_size, self.hidden_value_dim, batch_first=True)
         self.gumbel_temperature = gumbel_temperature
         self.type_embedding = nn.Embedding(num_embeddings=self.hidden_type_dim,
@@ -257,7 +257,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_dec, is_lstm=False,
+                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_init, is_lstm=False,
                  scan_token_to_type_map=None, input_tokens=None, positions_force=None, types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
@@ -272,7 +272,7 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.input_tokens = input_tokens
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
-        self.decoder_dec = decoder_dec
+        self.decoder_init = decoder_init
         self.positions_force = positions_force
         self.types_force = types_force
 
@@ -295,7 +295,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                            self.binary_type_predictor,
                                                            self.max_seq_len,
                                                            self.decoder_sem,
-                                                           self.decoder_dec,
+                                                           self.decoder_init,
                                                            self.gumbel_temperature)
             self.comp_query = nn.Parameter(torch.FloatTensor(2 * (hidden_value_dim + hidden_type_dim)))
         else:
@@ -304,7 +304,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                            self.binary_type_predictor,
                                                            self.max_seq_len,
                                                            self.decoder_sem,
-                                                           self.decoder_dec,
+                                                           self.decoder_init,
                                                            self.gumbel_temperature)
             self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
@@ -458,10 +458,9 @@ class TypedBinaryTreeLSTM(nn.Module):
             h_t_samples, h_t = self.type_predictor(h_v)
             # decode each word separately ((B*L), max_seq_len, target vocab size)
             # reshape to B x L x max_seq_len x len(decoder.vocab)
-            target_vocab_size = len(self.decoder_dec.vocab)  # includes max seq len slots variables "_i"
-            B, L = input_tokens.size()
-            initial_decodings = torch.zeros(B, L, self.max_seq_len)
-            initial_decodings[:, :, 0] = input_tokens
+            target_vocab_size = len(self.decoder_init.vocab)
+            B, L, _ = input.size()
+            initial_decodings, logits_init = self.decoder_init.decode(torch.flatten(input, start_dim=0, end_dim=1), self.max_seq_len)
             initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
                                           num_classes=target_vocab_size).view(B, L,
                                                                               self.max_seq_len,
@@ -543,6 +542,6 @@ class TypedBinaryTreeLSTM(nn.Module):
             h = (att_weights_expand * nodes).sum(1)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, logits_init
         else:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, select_masks
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, logits_init, select_masks

@@ -218,7 +218,7 @@ class SCANModel(nn.Module):
         # template decoder
         self.decoder_sem = templateDecoder(decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # not currently used
-        self.decoder_dec = Decoder(x_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # model
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
                                            hidden_value_dim=hidden_value_dim,
@@ -229,8 +229,7 @@ class SCANModel(nn.Module):
                                            bidirectional=bidirectional,
                                            max_seq_len=self.max_y_seq_len,
                                            decoder_sem=self.decoder_sem,
-                                           decoder_dec=self.decoder_dec,
-                                           x_vocab_size=len(x_vocab),
+                                           decoder_init=self.decoder_init,
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
@@ -251,15 +250,9 @@ class SCANModel(nn.Module):
         x_embed = self.embedding(x)
         # TK DEBUG
         # x_embed = self.dropout(x_embed)
-        sentence_vector, _, decoding_x, hom_loss, dt_all = self.encoder(input=x_embed,
-                                                                length=length,
-                                                                input_tokens=x,
-                                                                positions_force=positions_force,
-                                                                types_force=types_force)
-        # TK DEBUG
-        # print("decoding: ", decoding_x)
-        sentence_vector = sentence_vector[:, :self.hidden_value_dim]
-        # encode the x vocab decoding
-        enc_x = self.lstm_encoder(decoding_x)[1][0].squeeze(0)
-        outputs, logits = self.decoder_target.decode(enc_x, self.max_y_seq_len, force)
-        return outputs, logits, decoding_x, hom_loss, dt_all
+        sentence_vector, _, decoding, hom_loss, dt_all, logits_init = self.encoder(input=x_embed,
+                                                                      length=length,
+                                                                      input_tokens=x,
+                                                                      positions_force=positions_force,
+                                                                      types_force=types_force)
+        return decoding, hom_loss, dt_all, logits_init
