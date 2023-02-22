@@ -127,32 +127,37 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # than M the max decoding length
 
         # sample concatenated input value pair -> B x L x 2M
-        input_cat_sample = input_cat.argmax(-1)
+        # input_cat_sample = input_cat.argmax(-1)
 
         # extract the arguments from the input
+        il = input_cat[:, :, :self.max_seq_len, :]
+        ir = input_cat[:, :, self.max_seq_len:, :]
+        B, L, _ = dt_sample.size()
+        input_cat_sample = input_cat.argmax(-1)
         dl_sample = input_cat_sample[:, :, :self.max_seq_len]
         dr_sample = input_cat_sample[:, :, self.max_seq_len:]
 
         # compose the result by selecting either left or right input data based
         # on the template
-        # FIXME: surely there is a more elegant and efficient way to do this...
-        B, L, K = dt_sample.size()
+        K = dt_sample.size(2)
         M = dl_sample.size(2)
-        result = torch.zeros(B, L, M)
+        V = input_cat.size(3)
+        result = torch.zeros(B, L, M, V)
         for i in range(B):
             for k in range(L):
                 length_l = torch.count_nonzero(dl_sample[i][k]).tolist()
                 length_r = torch.count_nonzero(dr_sample[i][k]).tolist()
                 idx = 0
                 for t in range(K):  # template index
-                    if length_l != 0 and idx+length_l <= M and dt_sample[i][k][t].tolist() == 0:     # left
-                        result[i][k][idx:idx+length_l] = dl_sample[i][k][:length_l]
+                    template_code = dt_sample[i][k][t].tolist()
+                    if length_l != 0 and idx+length_l <= M and template_code == 0:     # left
+                        result[i][k][idx:idx+length_l][:] = il[i][k][:length_l][:]
                         idx = idx+length_l
-                    elif length_r != 0 and idx+length_r <= M and dt_sample[i][k][t].tolist() == 1:   # right
-                        result[i][k][idx:idx+length_r] = dr_sample[i][k][:length_r]
+                    elif length_r != 0 and idx+length_r <= M and template_code == 1:   # right
+                        result[i][k][idx:idx+length_r][:] = ir[i][k][:length_r][:]
                         idx = idx+length_r
-                    elif length_l != 0 and length_r != 0 and idx > 0:
-                        result[i][k][idx:] = 0 # PAD
+                    elif idx < M and template_code == 2:
+                        result[i][k][idx:][0] = 1.0
                         break
         return result
 
@@ -248,11 +253,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # B = batch size, L = sentence length, M = max decoded seq len
         # last dimension holds logits
         d_cat = torch.cat([dl, dr], dim=2).float()
-        new_d = self.apply_decoder_template(dt_sample, d_cat).long()
-        decoding = F.one_hot(torch.flatten(new_d, start_dim=0, end_dim=1),
-                             num_classes=self.vocab_size).view(B, L, self.max_seq_len, self.vocab_size)
+        new_d = self.apply_decoder_template(dt_sample, d_cat)
+        # decoding = F.one_hot(torch.flatten(new_d, start_dim=0, end_dim=1),
+        #                      num_classes=self.vocab_size).view(B, L, self.max_seq_len, self.vocab_size)
 
-        return (new_h, c, decoding), abstraction_hom_loss, dt
+        return (new_h, c, new_d), abstraction_hom_loss, dt
 
 class TypedBinaryTreeLSTM(nn.Module):
 
@@ -275,6 +280,7 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.decoder_init = decoder_init
         self.positions_force = positions_force
         self.types_force = types_force
+        self.initial_decoder = torch.nn.Linear(hidden_value_dim, len(self.decoder_init.vocab))
 
         assert not (self.bidirectional and not self.use_leaf_rnn)
 
@@ -459,12 +465,18 @@ class TypedBinaryTreeLSTM(nn.Module):
             # decode each word separately ((B*L), max_seq_len, target vocab size)
             # reshape to B x L x max_seq_len x len(decoder.vocab)
             target_vocab_size = len(self.decoder_init.vocab)
-            B, L, _ = input.size()
-            initial_decodings, logits_init = self.decoder_init.decode(torch.flatten(input, start_dim=0, end_dim=1), self.max_seq_len)
-            initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
-                                          num_classes=target_vocab_size).view(B, L,
-                                                                              self.max_seq_len,
-                                                                              target_vocab_size)
+            B, L, M = input.size()
+            # _, initial_decodings = self.decoder_init.decode(torch.flatten(input, start_dim=0, end_dim=1),
+            #
+            #                                                 self.max_seq_len)
+            # TK DEBUG FIXME: get the 49 from somewhere
+            initial_decodings = torch.zeros(B, L, 49, target_vocab_size)
+            initial_decodings[:, :, 0, :] = self.initial_decoder(h_v).softmax(-1)
+            # initial_decodings = initial_decodings.view(B, L, self.max_seq_len, target_vocab_size)
+            # initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
+            #                               num_classes=target_vocab_size).view(B, L,
+            #                                                                   self.max_seq_len,
+            #                                                                   target_vocab_size)
             dt_all = None
             if self.scan_token_to_type_map is not None:
                 # compute cross entropy loss of predicted type against the oracle
@@ -542,6 +554,6 @@ class TypedBinaryTreeLSTM(nn.Module):
             h = (att_weights_expand * nodes).sum(1)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, logits_init
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, initial_decodings
         else:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, logits_init, select_masks
+            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, initial_decodings, select_masks

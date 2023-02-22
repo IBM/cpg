@@ -174,10 +174,19 @@ def train(args):
             expected_padded = batch_y
             outputs_padded = torch.full((B, M), float(y_vocab.token_to_idx('<PAD>')))
             outputs_padded[:, :N] = decoding_idx
+
+
         # measure accuracy
         match = torch.eq(expected_padded.float(), outputs_padded.float())
         success = torch.eq(match.sum(1), match.size(1)).float()
         match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
+
+        # compute cross entropy loss of the decodings against the ground truth
+
+        loss = F.cross_entropy(torch.flatten(decoding, start_dim=0, end_dim=1),
+                               torch.flatten(expected_padded.long(), start_dim=0, end_dim=1))
+        print("cross entropy loss: ", loss)
+        # compute template loss
         # dt-all: B x ? x 8 (probs -- verify)
         # match: B x max_len (49)
         # success: B
@@ -187,22 +196,17 @@ def train(args):
         B, T, temp_vocab_size = probs.size()
         success_per_decoding = success.unsqueeze(1).unsqueeze(2).expand(B, T, temp_vocab_size)
         template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
-        # compute loss for initial decodings
-        log_probs_init = torch.clamp(logits_init, min=1.0e-20, max=1.0).log()
-        K, T, M = logits_init.size()
-        success_per_decoding = success.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand(B, int(K/B), T, M).reshape(K, T, M)
-        template_loss += ((success_per_decoding * -log_probs_init) + (1-success_per_decoding) * log_probs_init).mean()
         accuracy = torch.tensor(match).mean()
         # compute loss
         if is_training:
             optimizer.zero_grad()
-            loss = template_loss
+            loss = loss + template_loss
             if use_hom_loss:
                 loss += hom_loss
             loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
-        return template_loss, accuracy, hom_loss
+        return loss, accuracy, hom_loss
 
     def add_scalar_summary(summary_writer, name, value, step):
         if torch.is_tensor(value):

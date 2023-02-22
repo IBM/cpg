@@ -214,10 +214,10 @@ class SCANModel(nn.Module):
                 type = scan_word_to_type[word]
                 self.scan_token_to_type_map[token_idx] = type
         # x to y decoder
-        self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        #self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # template decoder
         self.decoder_sem = templateDecoder(decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
-        # not currently used
+        # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # model
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
