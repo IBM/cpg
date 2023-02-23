@@ -238,16 +238,19 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             new_h = torch.cat([h_v, new_h_type], dim=2)
 
         new_h_type_idx = new_h_type.argmax(-1).long()
+        B, L, T = new_h_type.shape
         #new_h_type_idx = F.gumbel_softmax(type_logits, tau=self.gumbel_temperature, dim=-1, hard=True).argmax(-1).long()
-        type_embedding = self.type_embedding(new_h_type_idx)
+        type_embedding = self.type_embedding(target_types.unsqueeze(1).repeat(1, L))
         # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
         K = 8
         _, dt = self.decoder_sem.decode(torch.flatten(type_embedding, start_dim=0, end_dim=1), K)
-        B, L, T = new_h_type.shape
         dt = dt.view(B, L, K, 3)
         dt_sample = dt.argmax(-1)
-        # TK DEBUG
-        #print(list(self.decoder_sem.gru.parameters())[0])
+        start_template = torch.full((L, K), -1)
+        start_template[:, 0] = 0
+        for i in range(B):
+            if target_types[i] == 25:
+                dt_sample[i] = start_template
 
         # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
         # B = batch size, L = sentence length, M = max decoded seq len
@@ -552,6 +555,7 @@ class TypedBinaryTreeLSTM(nn.Module):
             att_weights_expand = att_weights.unsqueeze(2).expand_as(nodes)
             # h: (batch_size, 1, 2 * hidden_dim)
             h = (att_weights_expand * nodes).sum(1)
+        dt_all = torch.nn.functional.gumbel_softmax(dt_all, tau=1, hard=False)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
             return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, initial_decodings

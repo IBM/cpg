@@ -191,6 +191,10 @@ def train(args):
         # match: B x max_len (49)
         # success: B
         # probs, idx: B x ?
+        # use multinomial distribution
+        #B, T, K, _ = dt_all.size()
+        #dt_all_idx = torch.multinomial(torch.softmax(dt_all, -1).view(B * T * K, 3), 1).view(B, T, K)
+        #probs = torch.gather(dt_all, 3, dt_all_idx.unsqueeze(3)).squeeze()
         probs, _ = torch.max(dt_all, dim=-1)
         log_probs = torch.clamp(probs, min=1.0e-20, max=1.0).log()
         B, T, temp_vocab_size = probs.size()
@@ -220,7 +224,7 @@ def train(args):
     train_accuracy_epoch_total = 0.0
     train_accuracy_epoch = 0.0
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_epoch > .9:
+        if args.use_curriculum and train_accuracy_epoch > .8:
             curriculum_stage += 1
             model.reset_gumbel_temp(1.0)
             #filter = lambda x: select(x, curriculum_stage

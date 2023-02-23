@@ -167,7 +167,7 @@ def build_vocab(data, base_tokens=[]):
 
 
 def preprocess(data, x_vocab, y_vocab):
-    return [(x_vocab.encode(x), y_vocab.encode(y + ['<EOS>'])) for x, y in data]
+    return [(x_vocab.encode(x), y_vocab.encode(y)) for x, y in data]
 
 
 class MyDataLoader:
