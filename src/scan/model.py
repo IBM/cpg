@@ -216,7 +216,8 @@ class SCANModel(nn.Module):
         # x to y decoder
         #self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # template decoder
-        self.decoder_sem = templateDecoder(decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        self.decoder_sem = nn.ModuleList([templateDecoder(decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+                                            for i in range(hidden_type_dim - 9)])
         # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # model

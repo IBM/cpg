@@ -243,14 +243,17 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         type_embedding = self.type_embedding(target_types.unsqueeze(1).repeat(1, L))
         # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
         K = 8
-        _, dt = self.decoder_sem.decode(torch.flatten(type_embedding, start_dim=0, end_dim=1), K)
-        dt = dt.view(B, L, K, 3)
-        dt_sample = dt.argmax(-1)
-        start_template = torch.full((L, K), -1)
+        dt = torch.zeros(B, L, K, 3)
+        # hard code start template
+        start_template = torch.full((L, K), 2)
         start_template[:, 0] = 0
+        start_template = F.one_hot(start_template, 3)
         for i in range(B):
+            _, dt[i] = self.decoder_sem[target_types[i]-9].decode(type_embedding[i], K)
+            # hard code start template
             if target_types[i] == 25:
-                dt_sample[i] = start_template
+                dt[i] = start_template
+        dt_sample = dt.argmax(-1)
 
         # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
         # B = batch size, L = sentence length, M = max decoded seq len
@@ -469,24 +472,30 @@ class TypedBinaryTreeLSTM(nn.Module):
             # reshape to B x L x max_seq_len x len(decoder.vocab)
             target_vocab_size = len(self.decoder_init.vocab)
             B, L, M = input.size()
+            if self.scan_token_to_type_map is not None:
+                # compute cross entropy loss of predicted type against the oracle
+                B, L, T_t = h_t.shape
+                target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
+                hom_loss_sum = F.cross_entropy(torch.clamp(h_t.view(B*L, T_t), min=1e-10, max=1.0).log(), target_types)
             # _, initial_decodings = self.decoder_init.decode(torch.flatten(input, start_dim=0, end_dim=1),
             #
             #                                                 self.max_seq_len)
             # TK DEBUG FIXME: get the 49 from somewhere
             initial_decodings = torch.zeros(B, L, 49, target_vocab_size)
             initial_decodings[:, :, 0, :] = self.initial_decoder(h_v).softmax(-1)
+            pad_decoding = torch.tensor([0 for _ in range(target_vocab_size)])
+            pad_decoding[0] = 1
+            for i in range(B):
+                for j in range(L):
+                    if target_types[i*L+j] not in [0, 4]:
+                        initial_decodings[i, j, 0, :] = pad_decoding
             # initial_decodings = initial_decodings.view(B, L, self.max_seq_len, target_vocab_size)
             # initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
             #                               num_classes=target_vocab_size).view(B, L,
             #                                                                   self.max_seq_len,
             #                                                                   target_vocab_size)
             dt_all = None
-            if self.scan_token_to_type_map is not None:
-                # compute cross entropy loss of predicted type against the oracle
-                B, L, T_t = h_t.shape
-                target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-                hom_loss_sum = F.cross_entropy(torch.clamp(h_t.view(B*L, T_t), min=1e-10, max=1.0).log(), target_types)
-
+            
             # TK DEBUG
             # new_types = F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)
             # h = torch.concat((h_v, new_types), dim=2)
@@ -555,7 +564,6 @@ class TypedBinaryTreeLSTM(nn.Module):
             att_weights_expand = att_weights.unsqueeze(2).expand_as(nodes)
             # h: (batch_size, 1, 2 * hidden_dim)
             h = (att_weights_expand * nodes).sum(1)
-        dt_all = torch.nn.functional.gumbel_softmax(dt_all, tau=1, hard=False)
         assert h.size(1) == 1 and c.size(1) == 1
         if not return_select_masks:
             return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, initial_decodings

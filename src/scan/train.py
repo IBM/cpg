@@ -126,7 +126,7 @@ def train(args):
     valid_summary_writer = SummaryWriter(
         log_dir=os.path.join(args.save_dir, 'log', 'valid'))
 
-    def run_iter(batch, is_training=False, use_hom_loss=False, verbose=False):
+    def run_iter(batch, average_accuracy, is_training=False, use_hom_loss=False, verbose=False):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
@@ -184,7 +184,7 @@ def train(args):
         # compute cross entropy loss of the decodings against the ground truth
 
         loss = F.cross_entropy(torch.flatten(decoding, start_dim=0, end_dim=1),
-                               torch.flatten(expected_padded.long(), start_dim=0, end_dim=1))
+                               torch.flatten(expected_padded.long(), start_dim=0, end_dim=1), ignore_index=0)
         print("cross entropy loss: ", loss)
         # compute template loss
         # dt-all: B x ? x 8 (probs -- verify)
@@ -195,6 +195,8 @@ def train(args):
         #B, T, K, _ = dt_all.size()
         #dt_all_idx = torch.multinomial(torch.softmax(dt_all, -1).view(B * T * K, 3), 1).view(B, T, K)
         #probs = torch.gather(dt_all, 3, dt_all_idx.unsqueeze(3)).squeeze()
+        temp = max(1.0-average_accuracy, 0.5)
+        dt_all = torch.nn.functional.gumbel_softmax(dt_all, tau=temp, hard=False)
         probs, _ = torch.max(dt_all, dim=-1)
         log_probs = torch.clamp(probs, min=1.0e-20, max=1.0).log()
         B, T, temp_vocab_size = probs.size()
@@ -224,7 +226,7 @@ def train(args):
     train_accuracy_epoch_total = 0.0
     train_accuracy_epoch = 0.0
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_epoch > .8:
+        if args.use_curriculum and train_accuracy_epoch > .9:
             curriculum_stage += 1
             model.reset_gumbel_temp(1.0)
             #filter = lambda x: select(x, curriculum_stage
@@ -258,19 +260,21 @@ def train(args):
             print("\niteration:", iter_count)
             if iter_count > -1:
                 train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
+                                                                average_accuracy=train_accuracy_epoch,
                                                                 is_training=True,
                                                                 use_hom_loss=True,
                                                                 verbose=True)
                 print("homomorphic loss: %1.4f" %hom_loss.item())
             else:
                 train_loss, train_accuracy, _ = run_iter(batch=train_batch,
+                                                         average_accuracy=train_accuracy_epoch,
                                                          is_training=True)
             train_accuracy_epoch_total += train_accuracy
             train_accuracy_epoch = train_accuracy_epoch_total / (iter_count+1)
             # if train_accuracy_epoch < worst_train_accuracy_epoch:
             #     worst_train_accuracy_epoch = train_accuracy_epoch
 
-            print("iteration template loss: %1.4f" %train_loss.item())
+            print("iteration loss: %1.4f" %train_loss.item())
             print("iteration train accuracy: %1.4f" %train_accuracy.item())
             print("average train accuracy for the epoch: %1.4f" % train_accuracy_epoch)
             # print("worst batch training accuracy for the epoch: %1.4f" % worst_train_accuracy_epoch)
@@ -284,16 +288,19 @@ def train(args):
             if iter_count == 1000:
                 pass
             # validate every epoch at the start
-            if e % 3 == 0 and batch_iter == 1 and train_accuracy_epoch > 0.95:
+            if e % 3 == 0 and batch_iter == 1 and train_accuracy_epoch > 0.89:
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
                 k = randint(0, num_valid_batches - 1)
                 for i, valid_batch in enumerate(valid_loader):
                     if args.print_in_valid and i == k:
                         valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
+                                                                 average_accuracy=train_accuracy_epoch,
                                                                  verbose=True)
                     else:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch, verbose=True)
+                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
+                                                                 average_accuracy=train_accuracy_epoch,
+                                                                 verbose=True)
                     valid_loss_sum += valid_loss.item()
                     valid_accuracy_sum += valid_accuracy.item()
                 valid_loss = valid_loss_sum / num_valid_batches
