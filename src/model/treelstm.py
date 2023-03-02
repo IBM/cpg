@@ -102,7 +102,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.type_predictor = type_predictor
         self.binary_type_predictor = binary_type_predictor
         self.max_seq_len = max_seq_len
-        self.decoder_sem = decoder_sem
+        #self.decoder_sem = decoder_sem
+        self.decoder_sem = nn.ModuleList([nn.Linear(in_features=hidden_value_dim,
+                                                    out_features=24) for i in range(hidden_type_dim - 9)])
         self.decoder_init = decoder_init
         self.vocab_size = len(self.decoder_init.vocab)
         self.encoder = nn.GRU(self.vocab_size, self.hidden_value_dim, batch_first=True)
@@ -249,7 +251,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         start_template[:, 0] = 0
         start_template = F.one_hot(start_template, 3)
         for i in range(B):
-            _, dt[i] = self.decoder_sem[target_types[i]-9].decode(type_embedding[i], K)
+            #_, dt[i] = self.decoder_sem[target_types[i]-9].decode(type_embedding[i], K)
+            dt[i] = self.decoder_sem[target_types[i]-9](type_embedding[i]).view(L, K, 3)
             # hard code start template
             if target_types[i] == 25:
                 dt[i] = start_template
