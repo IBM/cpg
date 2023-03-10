@@ -9,7 +9,8 @@ from torch.nn import functional as F
 
 from . import basic
 import numpy as np
-from src.scan.data import get_decoding_force
+from src.scan.data import get_decoding_force, ScanTypes
+
 
 class BinaryTreeLSTMLayer(nn.Module):
 
@@ -71,6 +72,7 @@ class TypePredictor(nn.Module):
         self.gumbel_temp = gumbel_temp
 
     def reduce_gumbel_temp(self, factor, iter, verbose=False):
+        # TK DEBUG
         new_temp = np.maximum(self.gumbel_temp * np.exp(-factor * iter), 0.5)
         if verbose:
             print(f'Gumbel temp lowered from {self.gumbel_temp:g} to {new_temp:g}')
@@ -102,15 +104,17 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.type_predictor = type_predictor
         self.binary_type_predictor = binary_type_predictor
         self.max_seq_len = max_seq_len
-        #self.decoder_sem = decoder_sem
-        self.decoder_sem = nn.ModuleList([nn.Linear(in_features=hidden_value_dim,
-                                                    out_features=24) for i in range(hidden_type_dim - 9)])
+        self.decoder_sem = decoder_sem
         self.decoder_init = decoder_init
         self.vocab_size = len(self.decoder_init.vocab)
         self.encoder = nn.GRU(self.vocab_size, self.hidden_value_dim, batch_first=True)
         self.gumbel_temperature = gumbel_temperature
         self.type_embedding = nn.Embedding(num_embeddings=self.hidden_type_dim,
                                            embedding_dim=self.hidden_value_dim)
+        self.type_embedding.weight.requires_grad = False
+        # TK DEBUG
+
+        self.length_predictor = nn.Linear(self.hidden_value_dim, 4) # TK FIXME remove hardcoding template length
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -134,35 +138,42 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # extract the arguments from the input
         il = input_cat[:, :, :self.max_seq_len, :]
         ir = input_cat[:, :, self.max_seq_len:, :]
-        B, L, _ = dt_sample.size()
-        input_cat_sample = input_cat.argmax(-1)
-        dl_sample = input_cat_sample[:, :, :self.max_seq_len]
-        dr_sample = input_cat_sample[:, :, self.max_seq_len:]
-
-        # compose the result by selecting either left or right input data based
-        # on the template
         K = dt_sample.size(2)
-        M = dl_sample.size(2)
-        V = input_cat.size(3)
+        B, L, M, V = input_cat.size()
+        M = int(M/2)
         result = torch.zeros(B, L, M, V)
+
+        # DEBUG
+        # print("template for batch element 5:")
+        # print("left arg: ", il[5])
+        # print("right arg: ", ir[5])
+        # for k in range(L):
+        #     # DEBUG
+        #     print("template: ", dt_sample[5][k])
+        pad_vector = torch.zeros(M, V)
+        pad_vector[:, 0] = 1.0
         for i in range(B):
             for k in range(L):
-                length_l = torch.count_nonzero(dl_sample[i][k]).tolist()
-                length_r = torch.count_nonzero(dr_sample[i][k]).tolist()
                 idx = 0
                 for t in range(K):  # template index
-                    template_code = dt_sample[i][k][t].tolist()
-                    if length_l != 0 and idx+length_l <= M and template_code == 0:     # left
-                        result[i][k][idx:idx+length_l][:] = il[i][k][:length_l][:]
-                        idx = idx+length_l
-                    elif length_r != 0 and idx+length_r <= M and template_code == 1:   # right
-                        result[i][k][idx:idx+length_r][:] = ir[i][k][:length_r][:]
-                        idx = idx+length_r
-                    elif idx < M and template_code == 2:
-                        result[i][k][idx:][0] = 1.0
-                        break
-        return result
+                    # template_code = torch.zeros(1, 3)
+                    # template_code[:, dt_sample[i][k][t].argmax(-1)] = 1.0 # already sampled
+                    template_code = dt_sample[i][k][t].unsqueeze(0).float()
+                    choices = torch.stack([il[i][k].flatten(), ir[i][k].flatten(), pad_vector.flatten()], dim=0)
+                    output = torch.mm(template_code, choices).view(M, V)
+                    # copy non-trailing pad part of the output
+                    # DEBUG
+                    # output_len = torch.count_nonzero(output.sum(-1)).tolist()
+                    output_idx = output.argmax(-1)
+                    output_len = 0
+                    for j in range(M):
+                        if output_idx[j] != 0:
+                            output_len = j+1
+                    output_len = min(output_len, M-idx)
+                    result[i][k][idx:idx+output_len] = output[:output_len]
+                    idx = idx + output_len
 
+        return result
 
     def forward(self, l=None, r=None, positions_force=None, target_types=None):
         """
@@ -242,21 +253,41 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         new_h_type_idx = new_h_type.argmax(-1).long()
         B, L, T = new_h_type.shape
         #new_h_type_idx = F.gumbel_softmax(type_logits, tau=self.gumbel_temperature, dim=-1, hard=True).argmax(-1).long()
-        type_embedding = self.type_embedding(target_types.unsqueeze(1).repeat(1, L))
+        type_embedding = self.type_embedding(target_types)
         # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
         K = 8
-        dt = torch.zeros(B, L, K, 3)
+        # dt = torch.zeros(B, L, K, 3)
+        dt_sample = torch.zeros(B, L, K, 3)
         # hard code start template
-        start_template = torch.full((L, K), 2)
+        start_template = torch.full((L, K), 2)  # 2 = PAD
         start_template[:, 0] = 0
         start_template = F.one_hot(start_template, 3)
+
         for i in range(B):
-            #_, dt[i] = self.decoder_sem[target_types[i]-9].decode(type_embedding[i], K)
-            dt[i] = self.decoder_sem[target_types[i]-9](type_embedding[i]).view(L, K, 3)
             # hard code start template
-            if target_types[i] == 25:
-                dt[i] = start_template
-        dt_sample = dt.argmax(-1)
+            if target_types[i] in (25, ScanTypes.E1, ScanTypes.E2, ScanTypes.E3, ScanTypes.E4, ScanTypes.F, ScanTypes.G):
+                dt_sample[i] = start_template
+            else:
+                # .unsqueeze(0).expand(L, K, 3).log_softmax(-1)
+                dt_sample[i] = torch.nn.functional.gumbel_softmax(
+                    self.decoder_sem[target_types[i]-9](type_embedding[i]).view(K, 3).log_softmax(-1),
+                    tau=self.gumbel_temperature, hard=True)
+
+
+            # mask = self.length_predictor(type_embedding[i]).log_softmax(-1)
+            # mask_idx = torch.nn.functional.gumbel_softmax(mask, tau=self.gumbel_temperature, hard=True)
+            # mask_idx = mask_idx + (1 - torch.cummax(mask_idx, -1)[0])
+            # mask_idx = mask_idx.unsqueeze(0).unsqueeze(2).expand(L, K, 3)
+            # dt_sample[i] = dt_sample[i] * mask_idx
+
+        #dt_log = torch.clamp(dt, min=1e-15, max=1.0).log()
+        # TK DEBUG
+        # dt_sample = torch.nn.functional.gumbel_softmax(dt_log, tau=self.gumbel_temperature, hard=True)
+
+        #dt_sample = dt_log.softmax(-1).argmax(-1)
+        # TK DEBUG
+        # print("type for batch: ", target_types)
+        # print("template for batch: ", dt_sample.argmax(-1))
 
         # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
         # B = batch size, L = sentence length, M = max decoded seq len
@@ -266,7 +297,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # decoding = F.one_hot(torch.flatten(new_d, start_dim=0, end_dim=1),
         #                      num_classes=self.vocab_size).view(B, L, self.max_seq_len, self.vocab_size)
 
-        return (new_h, c, new_d), abstraction_hom_loss, dt
+        # TK DEBUG
+        return (new_h, c, new_d), abstraction_hom_loss, dt_sample
 
 class TypedBinaryTreeLSTM(nn.Module):
 
@@ -304,6 +336,7 @@ class TypedBinaryTreeLSTM(nn.Module):
                                          out_features=2 * hidden_value_dim)
         self.type_predictor = TypePredictor(hidden_value_dim, [32, 32], hidden_type_dim)
         self.binary_type_predictor = TypePredictor(2 * hidden_type_dim, [32, 32], hidden_type_dim)
+
         if self.bidirectional:
             self.treelstm_layer = TypedBinaryTreeLSTMLayer(2 * hidden_value_dim, 2 * hidden_type_dim,
                                                            self.type_predictor,
@@ -331,6 +364,7 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.binary_type_predictor.reduce_gumbel_temp(0.001, it, verbose=True)
 
     def reset_gumbel_temp(self, new_temp):
+        self.gumbel_temperature = new_temp
         self.type_predictor.gumbel_temp = new_temp
         self.binary_type_predictor.gumbel_temp = new_temp
 
@@ -421,6 +455,12 @@ class TypedBinaryTreeLSTM(nn.Module):
         selected = (select_mask_expand * new).sum(1)
         return new, selected
 
+    @staticmethod
+    def int_to_one_hot(x, size):
+        result = torch.tensor([0 for _ in range(size)])
+        result[x] = 1
+        return result
+
     def forward(self, input, length, input_tokens, return_select_masks=False, positions_force=None, types_force=None):
         max_depth = input.size(1)
         length_mask = basic.sequence_mask(sequence_length=length,
@@ -492,6 +532,18 @@ class TypedBinaryTreeLSTM(nn.Module):
                 for j in range(L):
                     if target_types[i*L+j] not in [0, 4]:
                         initial_decodings[i, j, 0, :] = pad_decoding
+                    elif input_tokens[i, j] == 8:
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(8, target_vocab_size)
+                    elif input_tokens[i, j] == 2:
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(4, target_vocab_size)
+                    elif input_tokens[i, j] == 3:
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(6, target_vocab_size)
+                    elif input_tokens[i, j] == 10:
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(9, target_vocab_size)
+                    elif target_types[i*L+j] == 9:
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(7, target_vocab_size)
+                    elif input_tokens[i, j] == 5:
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(5, target_vocab_size)
             # initial_decodings = initial_decodings.view(B, L, self.max_seq_len, target_vocab_size)
             # initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
             #                               num_classes=target_vocab_size).view(B, L,
@@ -521,7 +573,6 @@ class TypedBinaryTreeLSTM(nn.Module):
                         types_force[k].pop(-1)
             else:
                 target_types = None
-
             new_state, hom_loss, dt = self.treelstm_layer(l=l, r=r, positions_force=positions_force,
                                                                                   target_types=target_types)
             hom_loss_sum += hom_loss

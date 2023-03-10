@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import init
 import torch.nn.functional as F
 
-from src.model.treelstm import TypedBinaryTreeLSTM
+from src.model.treelstm import TypedBinaryTreeLSTM, FeedForward
 from src.scan.data import scan_word_to_type, scan_token_to_type, Vocabulary
 
 class AttnDecoderRNN(nn.Module):
@@ -63,7 +63,7 @@ class Decoder(nn.Module):
         out = self.fc(out)
         return out.view(B, O), hidden
 
-    def decode(self, sem_f, max_seq_len, force=None):
+    def decode(self, sem_f, max_seq_len, temp, force=None):
         B, _ = sem_f.size()
         y_vocab = self.vocab
         V = y_vocab.size()
@@ -80,12 +80,19 @@ class Decoder(nn.Module):
 
             outputs, hidden = self.forward(inputs, hidden)
 
-            decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+            #decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
             # TK -- changed from argmax
             # probs = torch.exp(outputs)
             # decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
             # decoded[unf_idxs, t] = decoded_idxs
+            logit_outputs = torch.log_softmax(outputs, -1)
+            decoded_idxs = torch.nn.functional.gumbel_softmax(logit_outputs,
+                                                               tau=temp,
+                                                               hard=True).argmax(-1)
+            # decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+            decoded[unf_idxs, t] = decoded_idxs
 
+            logits[unf_idxs, t, :] = logit_outputs  # save logits for loss computation
             logits[unf_idxs, t, :] = outputs  # save logits for loss computation
 
             if force is not None:
@@ -98,7 +105,6 @@ class Decoder(nn.Module):
                 unf_idxs = unf_idxs[~is_finished]
                 if len(unf_idxs) > 0:
                     inputs = decoded_idxs[~is_finished]
-                    # TK FIXME: what do we do with hidden?
                     hidden = hidden[:, ~is_finished]
                 else:
                     break  # break if all sequences have reached '<EOS>'
@@ -108,66 +114,72 @@ class Decoder(nn.Module):
         return decoded, logits
 
 
-class templateDecoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_layers=2):
-        super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.embedding = nn.Embedding(input_dim, hidden_dim)
-        self.gru = nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, 3)
-
-    def forward(self, x, hidden):
-        B = x.size()[0]
-        D = self.input_dim
-        O = 3
-        x = self.embedding(x)
-        out, hidden = self.gru(x.view(B, 1, D), hidden)
-        out = self.fc(out)
-        return out.view(B, O), hidden
-
-    def decode(self, sem_f, max_seq_len, force=None):
-        B, _ = sem_f.size()
-        V = 3
-        M = max_seq_len
-
-        inputs = torch.tensor([2 for _ in range(B)], dtype=torch.long)
-        hidden = sem_f.unsqueeze(0).repeat_interleave(self.num_layers, dim=0)
-
-        unf_idxs = torch.arange(B)  # unfinished batch indices
-        decoded = torch.full((B, M), -1)  # -1 represents an empty slot, used to later compute mask
-        logits = torch.zeros((B, M, V))
-        for t in range(M):
-
-            outputs, hidden = self.forward(inputs, hidden)
-
-            decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
-            # TK -- changed from argmax
-            # probs = torch.exp(outputs)
-            # decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
-            # decoded[unf_idxs, t] = decoded_idxs
-
-            logits[unf_idxs, t, :] = outputs  # save logits for loss computation
-
-            if force is not None:
-                if t + 1 < force.shape[1]:
-                    inputs = force[:, t]
-                else:
-                    break  # break if we've reached the end of the forced input
-            else:
-                is_finished = decoded_idxs == 2
-                unf_idxs = unf_idxs[~is_finished]
-                if len(unf_idxs) > 0:
-                    inputs = decoded_idxs[~is_finished]
-                    # TK FIXME: what do we do with hidden?
-                    hidden = hidden[:, ~is_finished]
-                else:
-                    break  # break if all sequences have reached '<EOS>'
-
-        # TK DEBUG
-        # return decoded[:, :t + 1], logits[:, :t + 1, :]
-        return decoded, logits
+# class TemplateDecoder(nn.Module):
+#     def __init__(self, input_dim, hidden_dim, max_length):
+#         super().__init__()
+#         self.input_dim = input_dim
+#         self.hidden_dim = hidden_dim
+#         self.max_length = max_length
+#         self.fc = nn.Linear(hidden_dim, 2)
+#         self.is_done = nn.Linear(hidden_dim, 1)
+#
+#     def forward(self, x):
+#         for i in range(self.max_length):
+#
+#         B = x.size()[0]
+#         D = self.input_dim
+#         O = 3
+#         x = self.embedding(x)
+#         out, hidden = self.gru(x.view(B, 1, D), hidden)
+#         out = self.fc(out)
+#         return out.view(B, O), hidden
+#
+#     def decode(self, sem_f, max_seq_len, temp, force=None):
+#         B, _ = sem_f.size()
+#         V = 3
+#         M = max_seq_len
+#
+#         inputs = torch.tensor([2 for _ in range(B)], dtype=torch.long)
+#         hidden = sem_f.unsqueeze(0).repeat_interleave(self.num_layers, dim=0)
+#
+#         unf_idxs = torch.arange(B)  # unfinished batch indices
+#         decoded = torch.full((B, M), -1)  # -1 represents an empty slot, used to later compute mask
+#         logits = torch.zeros((B, M, V))
+#         for t in range(M):
+#
+#             outputs, hidden = self.forward(inputs, hidden)
+#
+#             #decoded[unf_idxs, t] = decoded_idxs = torch.argmax(outputs, dim=1)
+#             # TK -- changed from argmax
+#             # probs = torch.exp(outputs)
+#             # decoded_idxs = torch.multinomial(probs, 1).squeeze(1)
+#             # decoded[unf_idxs, t] = decoded_idxs
+#             logit_outputs = torch.log_softmax(outputs, -1)
+#             decoded_idxs = torch.nn.functional.gumbel_softmax(logit_outputs,
+#                                                                       tau=temp,
+#                                                                       hard=True).argmax(-1)
+#             decoded[unf_idxs, t] = decoded_idxs
+#
+#             logits[unf_idxs, t, :] = logit_outputs  # save logits for loss computation
+#
+#             if force is not None:
+#                 if t + 1 < force.shape[1]:
+#                     inputs = force[:, t]
+#                 else:
+#                     break  # break if we've reached the end of the forced input
+#             else:
+#                 is_finished = decoded_idxs == 2
+#                 unf_idxs = unf_idxs[~is_finished]
+#                 if len(unf_idxs) > 0:
+#                     inputs = decoded_idxs[~is_finished]
+#                     # TK FIXME: what do we do with hidden?
+#                     hidden = hidden[:, ~is_finished]
+#                 else:
+#                     break  # break if all sequences have reached '<EOS>'
+#
+#         # TK DEBUG
+#         # return decoded[:, :t + 1], logits[:, :t + 1, :]
+#         return decoded, logits
 
 
 class SCANModel(nn.Module):
@@ -198,6 +210,7 @@ class SCANModel(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
         self.embedding = nn.Embedding(num_embeddings=self.num_words,
                                       embedding_dim=word_dim)
+        self.embedding.weight.requires_grad=False
         self.scan_token_to_type_map = None
         if self.syntactic_supervision:
             self.scan_token_to_type_map = torch.zeros([len(self.x_vocab)], dtype=torch.int64)
@@ -213,11 +226,9 @@ class SCANModel(nn.Module):
                 token_idx = self.x_vocab._token_to_idx[word]
                 type = scan_word_to_type[word]
                 self.scan_token_to_type_map[token_idx] = type
-        # x to y decoder
-        #self.decoder_target = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
-        # template decoder
-        self.decoder_sem = nn.ModuleList([templateDecoder(decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
-                                            for i in range(hidden_type_dim - 9)])
+
+        self.decoder_sem = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 8 * 3)
+                                          for i in range(hidden_type_dim - 9)])
         # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # model
@@ -226,7 +237,7 @@ class SCANModel(nn.Module):
                                            hidden_type_dim=hidden_type_dim,
                                            use_leaf_rnn=use_leaf_rnn,
                                            intra_attention=intra_attention,
-                                           gumbel_temperature=1,
+                                           gumbel_temperature=1.0,
                                            bidirectional=bidirectional,
                                            max_seq_len=self.max_y_seq_len,
                                            decoder_sem=self.decoder_sem,
@@ -248,7 +259,10 @@ class SCANModel(nn.Module):
         self.encoder.reset_parameters()
 
     def forward(self, x, length, force=None, positions_force=None, types_force=None):
+        # TK DEBUG
+        self.embedding.weight.requires_grad=False
         x_embed = self.embedding(x)
+
         # TK DEBUG
         # x_embed = self.dropout(x_embed)
         sentence_vector, _, decoding, hom_loss, dt_all, logits_init = self.encoder(input=x_embed,

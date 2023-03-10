@@ -55,9 +55,9 @@ def train(args):
 
     if args.use_curriculum:
         # TK DEBUG -- changed from 0
-        curriculum_stage = 1
+        curriculum_stage = 2
         # filter_fn = lambda x: select(x, curriculum_stage)
-        filter_fn = lambda x: len(x[0]) <= curriculum_stage
+        filter_fn = lambda x: len(x[0]) == curriculum_stage
         train_data_curriculum = list(filter(filter_fn, train_data))
         print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
@@ -70,7 +70,7 @@ def train(args):
         preprocessed_valid_data = preprocess(test_data, x_vocab, y_vocab)
     train_loader = MyDataLoader(preprocessed_train_data,
                                 batch_size=args.batch_size,
-                                shuffle=False,
+                                shuffle=True,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
@@ -78,7 +78,7 @@ def train(args):
 
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
-                                shuffle=False,
+                                shuffle=True,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
@@ -89,7 +89,7 @@ def train(args):
                       x_vocab=x_vocab,
                       word_dim=args.word_dim,
                       hidden_value_dim=args.hidden_dim,
-                      hidden_type_dim=26,
+                      hidden_type_dim=27,   # FIXME
                       decoder_hidden_dim=args.decoder_hidden_dim,
                       decoder_num_layers=args.decoder_num_layers,
                       use_leaf_rnn=args.leaf_rnn,
@@ -149,9 +149,12 @@ def train(args):
             force = batch_y
         else:
             force = None
+
         decoding, hom_loss, dt_all, logits_init = model(x=batch_x, length=torch.full((B, 1), L).view(B),
                                                         force=force, positions_force=positions_force, types_force=types_force)
         decoding_idx = decoding.argmax(-1)
+        # temp = max(1.0-average_accuracy, 0.2)
+        # decoding_idx = torch.nn.functional.gumbel_softmax(decoding.log_softmax(-1), tau=temp, hard=False).argmax(-1)
         if verbose:
             input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
             expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
@@ -178,13 +181,16 @@ def train(args):
 
         # measure accuracy
         match = torch.eq(expected_padded.float(), outputs_padded.float())
-        success = torch.eq(match.sum(1), match.size(1)).float()
+        #success = torch.eq(match.sum(1), match.size(1)).float()
+        #success = torch.mean(match.float(), -1)
+        #success = torch.cumprod(match.float(), -1).mean(-1)
         match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
 
         # compute cross entropy loss of the decodings against the ground truth
+        # decoding_log = torch.clamp(decoding, min=1e-10, max=1.0).log()
+        # loss = F.cross_entropy(torch.flatten(decoding_log, start_dim=0, end_dim=1), expected_padded.flatten().long())
+        loss = F.cross_entropy(torch.flatten(decoding, start_dim=0, end_dim=1), expected_padded.flatten().long())
 
-        loss = F.cross_entropy(torch.flatten(decoding, start_dim=0, end_dim=1),
-                               torch.flatten(expected_padded.long(), start_dim=0, end_dim=1), ignore_index=0)
         print("cross entropy loss: ", loss)
         # compute template loss
         # dt-all: B x ? x 8 (probs -- verify)
@@ -195,18 +201,19 @@ def train(args):
         #B, T, K, _ = dt_all.size()
         #dt_all_idx = torch.multinomial(torch.softmax(dt_all, -1).view(B * T * K, 3), 1).view(B, T, K)
         #probs = torch.gather(dt_all, 3, dt_all_idx.unsqueeze(3)).squeeze()
-        temp = max(1.0-average_accuracy, 0.5)
-        dt_all = torch.nn.functional.gumbel_softmax(dt_all, tau=temp, hard=False)
-        probs, _ = torch.max(dt_all, dim=-1)
-        log_probs = torch.clamp(probs, min=1.0e-20, max=1.0).log()
-        B, T, temp_vocab_size = probs.size()
-        success_per_decoding = success.unsqueeze(1).unsqueeze(2).expand(B, T, temp_vocab_size)
-        template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
+
+        # dt_all = torch.nn.functional.gumbel_softmax(dt_all, tau=temp, hard=False)
+        # probs, _ = torch.max(dt_all, dim=-1)
+        # log_probs = torch.clamp(probs, min=1.0e-20, max=1.0).log()
+        # B, T, temp_vocab_size = probs.size()
+        # success_per_decoding = success.unsqueeze(1).unsqueeze(2).expand(B, T, temp_vocab_size)
+        # #template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
+        # template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
         accuracy = torch.tensor(match).mean()
         # compute loss
         if is_training:
             optimizer.zero_grad()
-            loss = loss + template_loss
+            # loss = loss + template_loss
             if use_hom_loss:
                 loss += hom_loss
             loss.backward()
@@ -226,7 +233,7 @@ def train(args):
     train_accuracy_epoch_total = 0.0
     train_accuracy_epoch = 0.0
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_epoch > .9:
+        if args.use_curriculum and train_accuracy_epoch > .75:
             curriculum_stage += 1
             model.reset_gumbel_temp(1.0)
             #filter = lambda x: select(x, curriculum_stage
@@ -285,42 +292,44 @@ def train(args):
             if (iter_count + 1) % 500 == 0:
                 model.reduce_gumbel_temp(iter_count)
             # TK DEBUG
-            if iter_count == 1000:
-                pass
+            print("iter count: ", iter_count)
+
             # validate every epoch at the start
-            if e % 3 == 0 and batch_iter == 1 and train_accuracy_epoch > 0.89:
-                valid_loss_sum = valid_accuracy_sum = 0
-                num_valid_batches = valid_loader.num_batches
-                k = randint(0, num_valid_batches - 1)
-                for i, valid_batch in enumerate(valid_loader):
-                    if args.print_in_valid and i == k:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
-                                                                 average_accuracy=train_accuracy_epoch,
-                                                                 verbose=True)
-                    else:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
-                                                                 average_accuracy=train_accuracy_epoch,
-                                                                 verbose=True)
-                    valid_loss_sum += valid_loss.item()
-                    valid_accuracy_sum += valid_accuracy.item()
-                valid_loss = valid_loss_sum / num_valid_batches
-                valid_accuracy = valid_accuracy_sum / num_valid_batches
-                add_scalar_summary(summary_writer=valid_summary_writer, name='loss', value=valid_loss, step=iter_count)
-                add_scalar_summary(summary_writer=valid_summary_writer, name='accuracy', value=valid_accuracy, step=iter_count)
-                scheduler.step(valid_accuracy)
-                progress = iter_count / train_loader.num_batches
-                logging.info(f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
-                # TK DEBUG
-                print("semantic loss: %1.4f" % valid_loss)
-                print("train accuracy: %1.4f" % valid_accuracy)
-                if valid_accuracy > best_vaild_accuacy:
-                    best_vaild_accuacy = valid_accuracy
-                    model_filename = (f'model-{progress:.2f}'
-                                    f'-{valid_loss:.4f}'
-                                    f'-{valid_accuracy:.4f}.pkl')
-                    model_path = os.path.join(args.save_dir, model_filename)
-                    torch.save(model.state_dict(), model_path)
-                    print(f'Saved the new best model to {model_path}')
+            # if args.use_curriculum:
+            #     valid_loss_sum = valid_accuracy_sum = 0
+            #     num_valid_batches = valid_loader.num_batches
+            #     k = randint(0, num_valid_batches - 1)
+            #     for i, valid_batch in enumerate(valid_loader):
+            #         if args.print_in_valid and i == k:
+            #             valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
+            #                                                      average_accuracy=train_accuracy_epoch,
+            #                                                      verbose=True)
+            #         else:
+            #             valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
+            #                                                      average_accuracy=train_accuracy_epoch,
+            #                                                      verbose=True)
+            #         valid_loss_sum += valid_loss.item()
+            #         valid_accuracy_sum += valid_accuracy.item()
+            #     valid_loss = valid_loss_sum / num_valid_batches
+            #     valid_accuracy = valid_accuracy_sum / num_valid_batches
+            #     add_scalar_summary(summary_writer=valid_summary_writer, name='loss', value=valid_loss, step=iter_count)
+            #     add_scalar_summary(summary_writer=valid_summary_writer, name='accuracy', value=valid_accuracy,
+            #                        step=iter_count)
+            #     scheduler.step(valid_accuracy)
+            #     progress = iter_count / train_loader.num_batches
+            #     logging.info(
+            #         f'Epoch {progress:.2f}: valid loss = {valid_loss:.4f}, valid accuracy = {valid_accuracy:.4f}')
+            #     # TK DEBUG
+            #     print("semantic loss: %1.4f" % valid_loss)
+            #     print("train accuracy: %1.4f" % valid_accuracy)
+            #     if valid_accuracy > best_vaild_accuacy:
+            #         best_vaild_accuacy = valid_accuracy
+            #         model_filename = (f'model-{progress:.2f}'
+            #                           f'-{valid_loss:.4f}'
+            #                           f'-{valid_accuracy:.4f}.pkl')
+            #         model_path = os.path.join(args.save_dir, model_filename)
+            #         torch.save(model.state_dict(), model_path)
+            #         print(f'Saved the new best model to {model_path}')
 
 
 def main():
