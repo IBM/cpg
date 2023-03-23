@@ -25,7 +25,7 @@ def save_vocab(word_set, path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data-paths', required=True)
+    parser.add_argument('--scan_data-paths', required=True)
     parser.add_argument('--lower', default=False, action='store_true')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()

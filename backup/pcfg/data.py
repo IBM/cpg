@@ -54,10 +54,10 @@ PCFG_ALL_TRAIN_SRC_URL = "https://github.com/i-machine-think/am-i-compositional/
 PCFG_ALL_TRAIN_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/pcfgset/train.tgt"
 PCFG_ALL_TEST_SRC_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/pcfgset/dev.src"
 PCFG_ALL_TEST_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/pcfgset/dev.tgt"
-PCFG_ALL_TRAIN_SRC_FILEPATH = "./data/PCFG_all_train_src.txt"
-PCFG_ALL_TRAIN_TGT_FILEPATH = "./data/PCFG_all_train_tgt.txt"
-PCFG_ALL_TEST_SRC_FILEPATH = "./data/PCFG_all_test_src.txt"
-PCFG_ALL_TEST_TGT_FILEPATH = "./data/PCFG_all_test_tgt.txt"
+PCFG_ALL_TRAIN_SRC_FILEPATH = "./scan_data/PCFG_all_train_src.txt"
+PCFG_ALL_TRAIN_TGT_FILEPATH = "./scan_data/PCFG_all_train_tgt.txt"
+PCFG_ALL_TEST_SRC_FILEPATH = "./scan_data/PCFG_all_test_src.txt"
+PCFG_ALL_TEST_TGT_FILEPATH = "./scan_data/PCFG_all_test_tgt.txt"
 def load_PCFG_all():
     if not os.path.exists(PCFG_ALL_TRAIN_SRC_FILEPATH):
         download_file(PCFG_ALL_TRAIN_SRC_URL, PCFG_ALL_TRAIN_SRC_FILEPATH, verbose=True)
@@ -73,8 +73,8 @@ def load_PCFG_all():
 
 PCFG_LOCALISM_SRC_URL = "https://raw.githubusercontent.com/i-machine-think/am-i-compositional/master/data/pcfgset/localism/increasing_string_length/increasing_length.src"
 PCFG_LOCALISM_TGT_URL = "https://raw.githubusercontent.com/i-machine-think/am-i-compositional/master/data/pcfgset/localism/increasing_string_length/increasing_length.tgt"
-PCFG_LOCALISM_SRC_FILEPATH = "./data/PCFG_localism_src.txt"
-PCFG_LOCALISM_TGT_FILEPATH = "./data/PCFG_localism_tgt.txt"
+PCFG_LOCALISM_SRC_FILEPATH = "./scan_data/PCFG_localism_src.txt"
+PCFG_LOCALISM_TGT_FILEPATH = "./scan_data/PCFG_localism_tgt.txt"
 def load_PCFG_localism(train_pctg=0.75):
     if not os.path.exists(PCFG_LOCALISM_SRC_FILEPATH):
         download_file(PCFG_LOCALISM_SRC_URL, PCFG_LOCALISM_SRC_FILEPATH, verbose=True)
@@ -90,10 +90,10 @@ PCFG_SYSTEMATICITY_TRAIN_SRC_URL = "https://github.com/i-machine-think/am-i-comp
 PCFG_SYSTEMATICITY_TRAIN_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/systematicity/train.tgt"
 PCFG_SYSTEMATICITY_TEST_SRC_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/systematicity/test.src"
 PCFG_SYSTEMATICITY_TEST_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/systematicity/test.tgt"
-PCFG_SYSTEMATICITY_TRAIN_SRC_FILEPATH = "./data/PCFG_systematicity_train_src.txt"
-PCFG_SYSTEMATICITY_TRAIN_TGT_FILEPATH = "./data/PCFG_systematicity_train_tgt.txt"
-PCFG_SYSTEMATICITY_TEST_SRC_FILEPATH = "./data/PCFG_systematicity_test_src.txt"
-PCFG_SYSTEMATICITY_TEST_TGT_FILEPATH = "./data/PCFG_systematicity_test_tgt.txt"
+PCFG_SYSTEMATICITY_TRAIN_SRC_FILEPATH = "./scan_data/PCFG_systematicity_train_src.txt"
+PCFG_SYSTEMATICITY_TRAIN_TGT_FILEPATH = "./scan_data/PCFG_systematicity_train_tgt.txt"
+PCFG_SYSTEMATICITY_TEST_SRC_FILEPATH = "./scan_data/PCFG_systematicity_test_src.txt"
+PCFG_SYSTEMATICITY_TEST_TGT_FILEPATH = "./scan_data/PCFG_systematicity_test_tgt.txt"
 def load_PCFG_systematicity():
     if not os.path.exists(PCFG_SYSTEMATICITY_TRAIN_SRC_FILEPATH):
         download_file(PCFG_SYSTEMATICITY_TRAIN_SRC_URL, PCFG_SYSTEMATICITY_TRAIN_SRC_FILEPATH, verbose=True)
@@ -111,10 +111,10 @@ PCFG_SUBSTITUTIVITY_TRAIN_SRC_URL = "https://github.com/i-machine-think/am-i-com
 PCFG_SUBSTITUTIVITY_TRAIN_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/substitutivity/primitive/train.tgt"
 PCFG_SUBSTITUTIVITY_TEST_SRC_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/substitutivity/primitive/test.src"
 PCFG_SUBSTITUTIVITY_TEST_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/substitutivity/primitive/test.tgt"
-PCFG_SUBSTITUTIVITY_TRAIN_SRC_FILEPATH = "./data/PCFG_substitutivity_train_src.txt"
-PCFG_SUBSTITUTIVITY_TRAIN_TGT_FILEPATH = "./data/PCFG_substitutivity_train_tgt.txt"
-PCFG_SUBSTITUTIVITY_TEST_SRC_FILEPATH = "./data/PCFG_substitutivity_test_src.txt"
-PCFG_SUBSTITUTIVITY_TEST_TGT_FILEPATH = "./data/PCFG_substitutivity_test_tgt.txt"
+PCFG_SUBSTITUTIVITY_TRAIN_SRC_FILEPATH = "./scan_data/PCFG_substitutivity_train_src.txt"
+PCFG_SUBSTITUTIVITY_TRAIN_TGT_FILEPATH = "./scan_data/PCFG_substitutivity_train_tgt.txt"
+PCFG_SUBSTITUTIVITY_TEST_SRC_FILEPATH = "./scan_data/PCFG_substitutivity_test_src.txt"
+PCFG_SUBSTITUTIVITY_TEST_TGT_FILEPATH = "./scan_data/PCFG_substitutivity_test_tgt.txt"
 def load_PCFG_substitutivity():
     if not os.path.exists(PCFG_SUBSTITUTIVITY_TRAIN_SRC_FILEPATH):
         download_file(PCFG_SUBSTITUTIVITY_TRAIN_SRC_URL, PCFG_SUBSTITUTIVITY_TRAIN_SRC_FILEPATH, verbose=True)
@@ -132,10 +132,10 @@ PCFG_PRODUCTIVITY_TRAIN_SRC_URL = "https://github.com/i-machine-think/am-i-compo
 PCFG_PRODUCTIVITY_TRAIN_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/productivity/train.tgt"
 PCFG_PRODUCTIVITY_TEST_SRC_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/productivity/test.src"
 PCFG_PRODUCTIVITY_TEST_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/productivity/test.tgt"
-PCFG_PRODUCTIVITY_TRAIN_SRC_FILEPATH = "./data/PCFG_productivity_train_src.txt"
-PCFG_PRODUCTIVITY_TRAIN_TGT_FILEPATH = "./data/PCFG_productivity_train_tgt.txt"
-PCFG_PRODUCTIVITY_TEST_SRC_FILEPATH = "./data/PCFG_productivity_test_src.txt"
-PCFG_PRODUCTIVITY_TEST_TGT_FILEPATH = "./data/PCFG_productivity_test_tgt.txt"
+PCFG_PRODUCTIVITY_TRAIN_SRC_FILEPATH = "./scan_data/PCFG_productivity_train_src.txt"
+PCFG_PRODUCTIVITY_TRAIN_TGT_FILEPATH = "./scan_data/PCFG_productivity_train_tgt.txt"
+PCFG_PRODUCTIVITY_TEST_SRC_FILEPATH = "./scan_data/PCFG_productivity_test_src.txt"
+PCFG_PRODUCTIVITY_TEST_TGT_FILEPATH = "./scan_data/PCFG_productivity_test_tgt.txt"
 def load_PCFG_productivity():
     if not os.path.exists(PCFG_PRODUCTIVITY_TRAIN_SRC_FILEPATH):
         download_file(PCFG_PRODUCTIVITY_TRAIN_SRC_URL, PCFG_PRODUCTIVITY_TRAIN_SRC_FILEPATH, verbose=True)
@@ -153,10 +153,10 @@ PCFG_OVERGENERALIZATION_TRAIN_SRC_URL = "https://github.com/i-machine-think/am-i
 PCFG_OVERGENERALIZATION_TRAIN_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/overgeneralisation/train_pcfg_ratio={}.tgt"
 PCFG_OVERGENERALIZATION_TEST_SRC_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/overgeneralisation/test_pcfg_ratio={}_exception.src"
 PCFG_OVERGENERALIZATION_TEST_TGT_URL = "https://github.com/i-machine-think/am-i-compositional/raw/master/data/pcfgset/overgeneralisation/test_pcfg_ratio={}_exception.tgt"
-PCFG_OVERGENERALIZATION_TRAIN_SRC_FILEPATH = "./data/PCFG_overgeneralization_train_ratio={}_src.txt"
-PCFG_OVERGENERALIZATION_TRAIN_TGT_FILEPATH = "./data/PCFG_overgeneralization_train_ratio={}_tgt.txt"
-PCFG_OVERGENERALIZATION_TEST_SRC_FILEPATH = "./data/PCFG_overgeneralization_test_ratio={}_exception_src.txt"
-PCFG_OVERGENERALIZATION_TEST_TGT_FILEPATH = "./data/PCFG_overgeneralization_test_ratio={}_exception_tgt.txt"
+PCFG_OVERGENERALIZATION_TRAIN_SRC_FILEPATH = "./scan_data/PCFG_overgeneralization_train_ratio={}_src.txt"
+PCFG_OVERGENERALIZATION_TRAIN_TGT_FILEPATH = "./scan_data/PCFG_overgeneralization_train_ratio={}_tgt.txt"
+PCFG_OVERGENERALIZATION_TEST_SRC_FILEPATH = "./scan_data/PCFG_overgeneralization_test_ratio={}_exception_src.txt"
+PCFG_OVERGENERALIZATION_TEST_TGT_FILEPATH = "./scan_data/PCFG_overgeneralization_test_ratio={}_exception_tgt.txt"
 legal_ratios = [0.005, 0.001, 0.0005, 0.0001]
 def load_PCFG_overgeneralization(ratio=0.001):
     assert ratio in legal_ratios, "ratio must be one of {}".format(legal_ratios)

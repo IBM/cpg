@@ -10,7 +10,7 @@ from torch.optim import lr_scheduler
 from torch.nn.utils import clip_grad_norm_
 from torchtext import data, datasets
 
-from src.sst.model import SSTModel
+from backup.sst.model import SSTModel
 
 
 logging.basicConfig(level=logging.INFO,
@@ -26,7 +26,7 @@ def train(args):
     if not args.fine_grained:
         filter_pred = lambda ex: ex.label != 'neutral'
     dataset_splits = datasets.SST.splits(
-        root='./data/sst', text_field=text_field, label_field=label_field,
+        root='./scan_data/sst', text_field=text_field, label_field=label_field,
         fine_grained=args.fine_grained, train_subtrees=True,
         filter_pred=filter_pred)
 

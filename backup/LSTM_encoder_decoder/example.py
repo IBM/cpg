@@ -5,18 +5,10 @@
 Example of using a LSTM encoder-decoder to model a synthetic time series 
 
 '''
-import argparse
-import logging
 
-import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from importlib import reload
-import sys
 
-import torch
-
-import generate_dataset
 import lstm_encoder_decoder
 import plotting
 import data
@@ -64,7 +56,7 @@ matplotlib.rcParams.update({'font.size': 17})
 # Xtrain, Ytrain = generate_dataset.windowed_dataset(y_train, input_window=iw, output_window=ow, stride=s)
 # Xtest, Ytest = generate_dataset.windowed_dataset(y_test, input_window=iw, output_window=ow, stride=s)
 #
-# # plot example of windowed data
+# # plot example of windowed scan_data
 # plt.figure(figsize=(10, 6))
 # plt.plot(np.arange(0, iw), Xtrain[:, 0, 0], 'k', linewidth=2.2, label='Input')
 # plt.plot(np.arange(iw - 1, iw + ow), np.concatenate([[Xtrain[-1, 0, 0]], Ytrain[:, 0, 0]]),
@@ -80,7 +72,7 @@ matplotlib.rcParams.update({'font.size': 17})
 # ----------------------------------------------------------------------------------------------------------------
 # LSTM encoder-decoder
 
-# convert windowed data from np.array to PyTorch tensor
+# convert windowed scan_data from np.array to PyTorch tensor
 #X_train, Y_train, X_test, Y_test = generate_dataset.numpy_to_torch(Xtrain, Ytrain, Xtest, Ytest)
 
 
@@ -112,7 +104,7 @@ train_loader = MyDataLoader(preprocessed_train_data,
                             max_x_seq_len=max_x_seq_len,
                             max_y_seq_len=max_y_seq_len)
 
-preprocessed_valid_data = data.preprocess(test_data, x_vocab, y_vocab)  # from scan length test_data
+preprocessed_valid_data = data.preprocess(test_data, x_vocab, y_vocab)  # from model length test_data
 valid_loader = MyDataLoader(preprocessed_valid_data,
                             batch_size=100,
                             shuffle=False,
@@ -138,7 +130,7 @@ loss = model.train_model(X_train.transpose(0, 1),
                          learning_rate=0.01,
                          dynamic_tf=False)
 
-# plot predictions on train/test data
+# plot predictions on train/test scan_data
 plotting.plot_train_test_results(model, X_train, Y_train, X_test, Y_test)
 
 plt.close('all')

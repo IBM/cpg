@@ -122,8 +122,8 @@ class lstm_seq2seq(nn.Module):
         '''
         train lstm encoder-decoder
         
-        : param input_tensor:              input data with shape (seq_len, # in batch, number features); PyTorch tensor    
-        : param target_tensor:             target data with shape (seq_len, # in batch, number features); PyTorch tensor
+        : param input_tensor:              input scan_data with shape (seq_len, # in batch, number features); PyTorch tensor
+        : param target_tensor:             target scan_data with shape (seq_len, # in batch, number features); PyTorch tensor
         : param n_epochs:                  number of epochs 
         : param target_len:                number of values to predict 
         : param batch_size:                number of samples per gradient update
@@ -159,7 +159,7 @@ class lstm_seq2seq(nn.Module):
             num_no_tf = 0
 
             for b in range(n_batches):
-                # select data 
+                # select scan_data
                 input_batch = input_tensor[:, b: b + batch_size, :]
                 target_batch = target_tensor[:, b: b + batch_size, :]
 
@@ -242,7 +242,7 @@ class lstm_seq2seq(nn.Module):
     def predict(self, input_tensor, target_len):
         
         '''
-        : param input_tensor:      input data (seq_len, input_size); PyTorch tensor 
+        : param input_tensor:      input scan_data (seq_len, input_size); PyTorch tensor
         : param target_len:        number of target values to predict 
         : return np_outputs:       np.array containing predicted values; prediction done recursively 
         '''

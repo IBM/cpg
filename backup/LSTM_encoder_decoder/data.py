@@ -9,13 +9,13 @@ from typing import Dict
 
 SCAN_LENGTH_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/length_split/tasks_train_length.txt"
 SCAN_LENGTH_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/length_split/tasks_test_length.txt"
-SCAN_LENGTH_TRAIN_FILEPATH = "./data/SCAN_length_train.txt"
-SCAN_LENGTH_TEST_FILEPATH = "./data/SCAN_length_test.txt"
+SCAN_LENGTH_TRAIN_FILEPATH = "./scan_data/SCAN_length_train.txt"
+SCAN_LENGTH_TEST_FILEPATH = "./scan_data/SCAN_length_test.txt"
 
 SCAN_SIMPLE_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/simple_split/tasks_train_simple.txt"
 SCAN_SIMPLE_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/simple_split/tasks_test_simple.txt"
-SCAN_SIMPLE_TRAIN_FILEPATH = "./data/SCAN_simple_train.txt"
-SCAN_SIMPLE_TEST_FILEPATH = "./data/SCAN_simple_test.txt"
+SCAN_SIMPLE_TRAIN_FILEPATH = "./scan_data/SCAN_simple_train.txt"
+SCAN_SIMPLE_TEST_FILEPATH = "./scan_data/SCAN_simple_test.txt"
 
 
 def download_file(url, filepath, verbose=False):

@@ -6,29 +6,27 @@ from random import randint
 from tensorboardX import SummaryWriter
 
 import torch
-import numpy as np
 from torch import nn, optim
-from torch.optim import lr_scheduler, optimizer
+from torch.optim import lr_scheduler
 from torch.nn.utils import clip_grad_norm_
-from torch.nn import functional as F
 
-from src.pcfg.model import PCFGModel
+from backup.pcfg.model import PCFGModel
 
-from src.pcfg.data import load_PCFG_split, build_vocab, preprocess, MyDataLoader
+from backup.pcfg.data import load_PCFG_split, build_vocab, preprocess, MyDataLoader
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 
 
 def train(args):
-    # load train and test data
+    # load train and test scan_data
     train_data, test_data = load_PCFG_split(args.data_split)
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
-    logging.info(f"Train data set size: {len(train_data)}")
-    logging.info(f"Train data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
-    logging.info(f"Test data set size: {len(test_data)}")
-    logging.info(f"Test data sample:\n\tx: {test_data[0][0]}\n\ty: {test_data[0][1]}")
+    logging.info(f"Train scan_data set size: {len(train_data)}")
+    logging.info(f"Train scan_data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
+    logging.info(f"Test scan_data set size: {len(test_data)}")
+    logging.info(f"Test scan_data sample:\n\tx: {test_data[0][0]}\n\ty: {test_data[0][1]}")
     x_vocab = build_vocab([x for x, _ in train_data],
                            base_tokens=['<PAD>', '<UNK>'])
     y_vocab = build_vocab([y for _, y in train_data],
@@ -200,7 +198,7 @@ def train(args):
 
 def main():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-    parser.add_argument('--data-split', default='localism',
+    parser.add_argument('--scan_data-split', default='localism',
                         choices={'all', 'localism', 'productivity', 'substitutivity', 'systematicity',
                                  'overgeneralization-0.005', 'overgeneralization-0.001',
                                  'overgeneralization-0.0005', 'overgeneralization-0.0001'})
@@ -226,7 +224,7 @@ def main():
     parser.add_argument('--halve-lr-every', default=2, type=int)
     parser.add_argument('--max_x_seq_len', default = 9)
     parser.add_argument('--max_y_seq_len', default = 49)
-    parser.add_argument('--data-frac', default = 1., type=float)
+    parser.add_argument('--scan_data-frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True)
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
     parser.add_argument('--use-prim-type-oracle', default=False) # TODO: implement

@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.scan.model import SCANModel
+from src.model.model import SCANModel
 
-from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim
+from src.model.scan_data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, load_SCAN_add_prim
 
 
 def evaluate(args):

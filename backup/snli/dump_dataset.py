@@ -1,13 +1,13 @@
 import argparse
 import pickle
 
-from src.snli.utils.dataset import SNLIDataset
+from backup.snli.utils.dataset import SNLIDataset
 from src.utils.vocab import Vocab
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', required=True)
+    parser.add_argument('--scan_data', required=True)
     parser.add_argument('--vocab', required=True)
     parser.add_argument('--vocab-size', required=True, type=int)
     parser.add_argument('--max-length', required=True, type=int)

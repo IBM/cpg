@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.pcfg.model import PCFGModel
+from backup.pcfg.model import PCFGModel
 
-from src.pcfg.data import build_vocab, preprocess, MyDataLoader, load_PCFG_split
+from backup.pcfg.data import build_vocab, preprocess, MyDataLoader, load_PCFG_split
 
 
 def evaluate(args):
@@ -100,7 +100,7 @@ def evaluate(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data-split', default='localism',
+    parser.add_argument('--scan_data-split', default='localism',
                         choices={'all', 'localism', 'productivity', 'substitutivity', 'systematicity',
                                  'overgeneralization-0.005', 'overgeneralization-0.001',
                                  'overgeneralization-0.0005', 'overgeneralization-0.0001'})

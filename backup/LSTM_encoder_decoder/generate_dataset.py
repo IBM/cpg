@@ -32,7 +32,7 @@ def train_test_split(t, y, split = 0.8):
   
   : param t:                      time array
   : para y:                       feature array
-  : para split:                   percent of data to include in training set 
+  : para split:                   percent of scan_data to include in training set
   : return t_train, y_train:      time/feature training and test sets;  
   :        t_test, y_test:        (shape: [# samples, 1])
   
@@ -90,10 +90,10 @@ def numpy_to_torch(Xtrain, Ytrain, Xtest, Ytest):
     '''
     convert numpy array to PyTorch tensor
     
-    : param Xtrain:                           windowed training input data (input window size, # examples, # features); np.array
-    : param Ytrain:                           windowed training target data (output window size, # examples, # features); np.array
-    : param Xtest:                            windowed test input data (input window size, # examples, # features); np.array
-    : param Ytest:                            windowed test target data (output window size, # examples, # features); np.array
+    : param Xtrain:                           windowed training input scan_data (input window size, # examples, # features); np.array
+    : param Ytrain:                           windowed training target scan_data (output window size, # examples, # features); np.array
+    : param Xtest:                            windowed test input scan_data (input window size, # examples, # features); np.array
+    : param Ytest:                            windowed test target scan_data (output window size, # examples, # features); np.array
     : return X_train_torch, Y_train_torch,
     :        X_test_torch, Y_test_torch:      all input np.arrays converted to PyTorch tensors 
 

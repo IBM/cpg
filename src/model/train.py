@@ -11,26 +11,25 @@ from torch import nn, optim
 from torch.optim import lr_scheduler, optimizer
 from torch.nn.utils import clip_grad_norm_
 from torch.nn import functional as F
-
-from src.scan.model import SCANModel
-
-from src.scan.data import load_SCAN_length, load_SCAN_simple, build_vocab, preprocess, MyDataLoader, \
-                          load_SCAN_add_jump_0, load_SCAN_add_jump_4, parse_scan, \
-        load_SCAN_add_jump_0_no_jump_oversampling
+from src.model.model import SCANModel
+from src.model.data import build_vocab, preprocess, MyDataLoader
+from src.model.scan_data import load_SCAN_length, load_SCAN_simple, \
+    load_SCAN_add_jump_0, load_SCAN_add_jump_4, parse_scan, \
+    load_SCAN_add_jump_0_no_jump_oversampling, load_SCAN_add_turn_left
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 
 
 def train(args):
-    # load train and test data
-    train_data, test_data = load_SCAN_add_jump_0_no_jump_oversampling()
+    # load train and test scan_data
+    train_data, test_data = load_SCAN_add_turn_left()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
-    logging.info(f"Train data set size: {len(train_data)}")
-    logging.info(f"Train data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
-    logging.info(f"Test data set size: {len(test_data)}")
-    logging.info(f"Test data sample:\n\tx: {test_data[0][0]}\n\ty: {test_data[0][1]}")
+    logging.info(f"Train scan_data set size: {len(train_data)}")
+    logging.info(f"Train scan_data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
+    logging.info(f"Test scan_data set size: {len(test_data)}")
+    logging.info(f"Test scan_data sample:\n\tx: {test_data[0][0]}\n\ty: {test_data[0][1]}")
     x_vocab = build_vocab([x for x, _ in train_data],
                            base_tokens=['<PAD>', '<UNK>'])
     y_vocab = build_vocab([y for _, y in train_data],
@@ -242,6 +241,7 @@ def train(args):
             filter_fn = lambda x: len(x[0]) <= curriculum_stage
             train_data_curriculum = list(filter(filter_fn, train_data))
             print(train_data_curriculum)
+            print("curriculum size: ", len(train_data_curriculum))
             preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
             train_loader = MyDataLoader(preprocessed_train_data,
                                         batch_size=args.batch_size,
@@ -295,13 +295,13 @@ def train(args):
 
             iter_count += 1
             iter_count_stage += 1
-            if (iter_count + 1) % 500 == 0:
-                model.reduce_gumbel_temp(iter_count)
+            if (iter_count + 1) % 100 == 0:
+                model.reduce_gumbel_temp(iter_count_stage)
             # TK DEBUG
             print("iter count: ", iter_count)
 
             # validate once for each stage, and once every 500 iterations at stage 6
-            if (not validated and train_accuracy_stage > 0.74) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
+            if (not validated and train_accuracy_stage > 0.9) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
                 validated = True
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
@@ -363,13 +363,14 @@ def main():
     parser.add_argument('--halve-lr-every', default=2, type=int)
     parser.add_argument('--max_x_seq_len', default = 9)
     parser.add_argument('--max_y_seq_len', default = 49)
-    parser.add_argument('--data-frac', default = 1., type=float)
+    parser.add_argument('--scan_data-frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True)
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
     parser.add_argument('--use-prim-type-oracle', default=False)
     parser.add_argument('--print-in-valid', default=False)
     parser.add_argument('--use-curriculum', default=False)
     parser.add_argument('--syntactic-supervision', default=False)
+    parser.add_argument('--data-frac', default=1.0)
     args = parser.parse_args()
     train(args)
 

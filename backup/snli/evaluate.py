@@ -5,8 +5,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.snli.model import SNLIModel
-from src.snli.utils.dataset import SNLIDataset
+from backup.snli.model import SNLIModel
+from backup.snli.utils.dataset import SNLIDataset
 
 
 def evaluate(args):
@@ -50,7 +50,7 @@ def evaluate(args):
         num_correct_batch = torch.eq(label, label_pred).long().sum()
         num_correct_batch = num_correct_batch.item()
         num_correct += num_correct_batch
-    print(f'# data: {num_data}')
+    print(f'# scan_data: {num_data}')
     print(f'# correct: {num_correct}')
     print(f'Accuracy: {num_correct / num_data:.4f}')
 
@@ -58,7 +58,7 @@ def evaluate(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', required=True)
-    parser.add_argument('--data', required=True)
+    parser.add_argument('--scan_data', required=True)
     parser.add_argument('--word-dim', required=True, type=int)
     parser.add_argument('--hidden-dim', required=True, type=int)
     parser.add_argument('--clf-hidden-dim', required=True, type=int)

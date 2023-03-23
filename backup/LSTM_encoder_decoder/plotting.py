@@ -6,16 +6,16 @@ import torch
 
 def plot_train_test_results(lstm_model, Xtrain, Ytrain, Xtest, Ytest, num_rows = 4):
   '''
-  plot examples of the lstm encoder-decoder evaluated on the training/test data
+  plot examples of the lstm encoder-decoder evaluated on the training/test scan_data
   
   : param lstm_model:     trained lstm encoder-decoder
-  : param Xtrain:         np.array of windowed training input data
-  : param Ytrain:         np.array of windowed training target data
-  : param Xtest:          np.array of windowed test input data
-  : param Ytest:          np.array of windowed test target data 
+  : param Xtrain:         np.array of windowed training input scan_data
+  : param Ytrain:         np.array of windowed training target scan_data
+  : param Xtest:          np.array of windowed test input scan_data
+  : param Ytest:          np.array of windowed test target scan_data
   : param num_rows:       number of training/test examples to plot
-  : return:               num_rows x 2 plots; first column is training data predictions,
-  :                       second column is test data predictions
+  : return:               num_rows x 2 plots; first column is training scan_data predictions,
+  :                       second column is test scan_data predictions
   '''
 
   # input window size

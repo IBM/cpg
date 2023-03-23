@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torchtext import data, datasets
 
-from src.sst.model import SSTModel
+from backup.sst.model import SSTModel
 
 
 def evaluate(args):
@@ -16,7 +16,7 @@ def evaluate(args):
     if not args.fine_grained:
         filter_pred = lambda ex: ex.label != 'neutral'
     dataset_splits = datasets.SST.splits(
-        root='./data/sst', text_field=text_field, label_field=label_field,
+        root='./scan_data/sst', text_field=text_field, label_field=label_field,
         fine_grained=args.fine_grained, train_subtrees=True,
         filter_pred=filter_pred)
     test_dataset = dataset_splits[2]
@@ -59,7 +59,7 @@ def evaluate(args):
         num_correct_batch = torch.eq(label, label_pred).long().sum(
         num_correct_batch = num_correct_batch.item()
         num_correct += num_correct_batch
-    print(f'# data: {num_data}')
+    print(f'# scan_data: {num_data}')
     print(f'# correct: {num_correct}')
     print(f'Accuracy: {num_correct / num_data:.4f}')
 

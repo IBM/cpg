@@ -2,14 +2,12 @@ import math
 
 import torch
 from torch import nn
-from torch.distributions import Categorical
-from torch.nn import init, Embedding
-import torch.nn.functional as F
+from torch.nn import init
 from torch.nn import functional as F
 
-from . import basic
+from src.model import basic
 import numpy as np
-from src.scan.data import get_decoding_force, ScanTypes
+from src.model.scan_data import ScanTypes
 
 
 class BinaryTreeLSTMLayer(nn.Module):
@@ -120,9 +118,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
     def reset_parameters(self):
         for i in range(self.hidden_type_dim - 9):
             init.orthogonal_(self.comp_linear_v[i].weight.data)
-            #init.orthogonal_(self.comp_linear_t.weight.data)    # TODO: is this what we want?
+            #init.orthogonal_(self.comp_linear_t.weight.scan_data)    # TODO: is this what we want?
             init.constant_(self.comp_linear_v[i].bias.data, val=0)
-            #init.constant_(self.comp_linear_t.bias.data, val=0)
+            #init.constant_(self.comp_linear_t.bias.scan_data, val=0)
             # type predictor's parameter are not reset
 
     def apply_decoder_template(self, dt_sample, input_cat):
@@ -300,11 +298,20 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         # TK DEBUG
         return (new_h, c, new_d), abstraction_hom_loss, dt_sample
 
+    def reduce_gumbel_temp(self, factor, iter, verbose=False):
+        # TK DEBUG
+        new_temp = np.maximum(self.gumbel_temperature * np.exp(-factor * iter), 0.5)
+        if verbose:
+            print(f'Gumbel temp lowered from {self.gumbel_temperature:g} to {new_temp:g}')
+        self.gumbel_temperature = new_temp
+
+
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_init, is_lstm=False,
-                 scan_token_to_type_map=None, input_tokens=None, positions_force=None, types_force=None):
+                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_init, x_vocab,
+                 y_vocab, is_lstm=False, scan_token_to_type_map=None, input_tokens=None, positions_force=None,
+                 types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
         self.hidden_value_dim = hidden_value_dim
@@ -319,6 +326,8 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
         self.decoder_init = decoder_init
+        self.x_vocab = x_vocab
+        self.y_vocab = y_vocab
         self.positions_force = positions_force
         self.types_force = types_force
         self.initial_decoder = torch.nn.Linear(hidden_value_dim, len(self.decoder_init.vocab))
@@ -359,14 +368,16 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.reset_parameters()
 
     def reduce_gumbel_temp(self, it):
-        # TK DEBUG 0.0003 -> 0.00003
-        self.type_predictor.reduce_gumbel_temp(0.001, it, verbose=True)
-        self.binary_type_predictor.reduce_gumbel_temp(0.001, it, verbose=True)
+        factor = 0.001
+        self.gumbel_temperature = np.maximum(self.gumbel_temperature * np.exp(-factor * it), 0.5)
+        self.type_predictor.reduce_gumbel_temp(factor, it, verbose=True)
+        self.binary_type_predictor.reduce_gumbel_temp(factor, it, verbose=True)
+        self.treelstm_layer.reduce_gumbel_temp(factor, it, verbose=True)
 
     def reset_gumbel_temp(self, new_temp):
-        self.gumbel_temperature = new_temp
         self.type_predictor.gumbel_temp = new_temp
         self.binary_type_predictor.gumbel_temp = new_temp
+        self.treelstm_layer.gumbel_temp = new_temp
 
     def reset_parameters(self):
         if self.use_leaf_rnn:
@@ -532,18 +543,19 @@ class TypedBinaryTreeLSTM(nn.Module):
                 for j in range(L):
                     if target_types[i*L+j] not in [0, 4]:
                         initial_decodings[i, j, 0, :] = pad_decoding
-                    elif input_tokens[i, j] == 8:
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(8, target_vocab_size)
-                    elif input_tokens[i, j] == 2:
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(4, target_vocab_size)
-                    elif input_tokens[i, j] == 3:
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(6, target_vocab_size)
-                    elif input_tokens[i, j] == 10:
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(9, target_vocab_size)
-                    elif target_types[i*L+j] == 9:
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(7, target_vocab_size)
-                    elif input_tokens[i, j] == 5:
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(5, target_vocab_size)
+                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("run"):
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_RUN"), target_vocab_size)
+                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("look"):
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_LOOK"), target_vocab_size)
+                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("walk"):
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_WALK"), target_vocab_size)
+                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("jump"):
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_JUMP"), target_vocab_size)
+                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("left"):
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_LEFT"), target_vocab_size)
+                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("right"):
+                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_RIGHT"), target_vocab_size)
+
             # initial_decodings = initial_decodings.view(B, L, self.max_seq_len, target_vocab_size)
             # initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
             #                               num_classes=target_vocab_size).view(B, L,

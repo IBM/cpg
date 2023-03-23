@@ -4,7 +4,7 @@ from torch.nn import init
 import torch.nn.functional as F
 
 from src.model.treelstm import TypedBinaryTreeLSTM
-from src.pcfg.data import pcfg_word_to_type
+from backup.pcfg.data import pcfg_word_to_type
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, output_size, hidden_size, dropout_p=0.1, max_length=10, device='cpu'):

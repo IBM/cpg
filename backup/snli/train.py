@@ -12,8 +12,8 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
-from src.snli.model import SNLIModel
-from src.snli.utils.dataset import SNLIDataset
+from backup.snli.model import SNLIModel
+from backup.snli.utils.dataset import SNLIDataset
 from src.utils.glove import load_glove
 
 logging.basicConfig(level=logging.INFO,
@@ -158,8 +158,8 @@ def train(args):
 
 def main():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-    parser.add_argument('--train-data', required=True)
-    parser.add_argument('--valid-data', required=True)
+    parser.add_argument('--train-scan_data', required=True)
+    parser.add_argument('--valid-scan_data', required=True)
     parser.add_argument('--word-dim', required=True, type=int)
     parser.add_argument('--hidden-dim', required=True, type=int)
     parser.add_argument('--clf-hidden-dim', required=True, type=int)

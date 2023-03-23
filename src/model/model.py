@@ -4,7 +4,8 @@ from torch.nn import init
 import torch.nn.functional as F
 
 from src.model.treelstm import TypedBinaryTreeLSTM, FeedForward
-from src.scan.data import scan_word_to_type, scan_token_to_type, Vocabulary
+from src.model.scan_data import scan_word_to_type, scan_token_to_type
+
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, output_size, hidden_size, dropout_p=0.1, max_length=10, device='cpu'):
@@ -242,6 +243,8 @@ class SCANModel(nn.Module):
                                            max_seq_len=self.max_y_seq_len,
                                            decoder_sem=self.decoder_sem,
                                            decoder_init=self.decoder_init,
+                                           x_vocab=self.x_vocab,
+                                           y_vocab=self.y_vocab,
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
