@@ -50,11 +50,6 @@ class CogsTypes(IntEnum):
     PAD = 25
 
 
-scan_token_to_type = {
-    "twice": ScanTypes.P,
-    "<PAD>": ScanTypes.PAD
-}
-
 # 100 nouns, picked from the MacArthur Communicative Development Inventory and the BNC top frequent nouns
 # BNC freq rank: http://ucrel.lancs.ac.uk/bncfreq/flists.html
 animate_nouns = [
@@ -332,7 +327,7 @@ pos_d.update({n: 'PROPN' for n in proper_nouns + target_item_props})
 pos_d.update({n: 'NOUN' for n in noun_list + target_item_nouns})
 
 
-cogs_grammar_str = """
+cogs_grammar = """
 
 S: S1 | S2 | S3 | VP_internal
 S1: NP_animate_nsubj VP external
@@ -472,17 +467,17 @@ INF: 'to'
 parser = Lark(cogs_grammar, propagate_positions=True)
 
 def parse_cogs(scan_command):
-    parse_tree = parser.parse(scan_command)
-    current_position = 0
-    previous_index = 0
-    positions = []
-    types = []
-    for node in parse_tree.iter_subtrees_topdown():
-        if previous_index < node.meta.start_pos:
-            current_position += 1
-            previous_index = node.meta.start_pos
-        if node.data.value in ["a", "t", "m", "n", "d", "p", "q", "i", "j", "start"]:
-            continue
-        positions.append(current_position)
-        types.append(scan_token_to_type[node.data.value])
+    # parse_tree = parser.parse(scan_command)
+    # current_position = 0
+    # previous_index = 0
+    # positions = []
+    # types = []
+    # for node in parse_tree.iter_subtrees_topdown():
+    #     if previous_index < node.meta.start_pos:
+    #         current_position += 1
+    #         previous_index = node.meta.start_pos
+    #     if node.data.value in ["a", "t", "m", "n", "d", "p", "q", "i", "j", "start"]:
+    #         continue
+    #     positions.append(current_position)
+    #     types.append(scan_token_to_type[node.data.value])
     return positions, types
