@@ -334,90 +334,119 @@ pos_d.update({n: 'NOUN' for n in noun_list + target_item_nouns})
 
 cogs_grammar_str = """
 
-S -> NP_animate_nsubj VP_external | VP_internal  \
-   | NP_inanimate_nsubjpass VP_passive | NP_animate_nsubjpass VP_passive_dat
+S: S1 | S2 | S3 | VP_internal
+S1: NP_animate_nsubj VP external
+S2: NP_inanimate_nsubjpass VP_passive
+S3: NP_animate_nsubjpass VP_passive_dat
    
-VP_external -> V_unerg | V_unacc NP_dobj \
-             | V_trans_omissible | V_trans_omissible NP_dobj \
-             | V_trans_not_omissible NP_dobj | V_inf_taking INF V_inf \
-             | V_cp_taking C S \
-             | V_dat NP_inanimate_dobj PP_iobj  | V_dat NP_animate_iobj NP_inanimate_dobj
+VP_external: V_unerg | V_trans_omissible | VP_external1 | VP_external2 | VP_external3 \
+    | VP_external4 | VP_external5 | VP_external6 | VP_external7
+VP_external1: V_unacc NP_dobj
+VP_external2: V_trans_omissible NP_dobj
+VP_external3: V_trans_not_omissible NP_dobj
+VP_external4: V_inf_taking INF V_inf
+VP_external5: V_cp_taking C S
+VP_external6: V_dat NP_inanimate_dobj PP_iobj
+VP_external7: V_dat NP_animate_iobj NP_inanimate_dobj
              
-VP_internal -> NP_unacc_subj V_unacc
+VP_internal: NP_unacc_subj V_unacc
 
-VP_passive -> AUX V_trans_not_omissible_pp | AUX V_trans_not_omissible_pp BY NP_animate_nsubj |  \
-              AUX V_trans_omissible_pp | AUX V_trans_omissible_pp BY NP_animate_nsubj  |  \
-              AUX V_unacc_pp | AUX V_unacc_pp BY NP_animate_nsubj | \
-              AUX V_dat_pp PP_iobj | AUX V_dat_pp PP_iobj BY NP_animate_nsubj
+VP_passive: VP_passive1 | VP_passive2 | VP_passive3 | VP_passive4 \
+    | VP_passive5 | VP_passive6 | VP_passive7 | VP_passive8
+VP_passive1: AUX V_trans_not_omissible_pp
+VP_passive2: AUX V_trans_not_omissible_pp BY NP_animate_nsubj
+VP_passive3: AUX V_trans_omissible_pp
+VP_passive4: AUX V_trans_omissible_pp BY NP_animate_nsubj
+VP_passive5: AUX V_unacc_pp
+VP_passive6: AUX V_unacc_pp BY NP_animate_nsubj
+VP_passive7: AUX V_dat_pp PP_iobj
+VP_passive8: AUX V_dat_pp PP_iobj BY NP_animate_nsubj
               
-VP_passive_dat -> AUX V_dat_pp NP_inanimate_dobj | AUX V_dat_pp NP_inanimate_dobj BY NP_animate_nsubj
+VP_passive_dat: VP_passive_dat1 | VP_passive_dat2
+VP_passive_dat1: AUX V_dat_pp NP_inanimate_dobj
+VP_passive_dat2: AUX V_dat_pp NP_inanimate_dobj BY NP_animate_nsubj
 
-NP_dobj -> NP_inanimate_dobj | NP_animate_dobj
+NP_dobj: NP_inanimate_dobj | NP_animate_dobj
 
-NP_unacc_subj -> NP_inanimate_dobj_noPP | NP_animate_dobj_noPP
+NP_unacc_subj: NP_inanimate_dobj_noPP | NP_animate_dobj_noPP
 
-NP_animate_dobj_noPP -> Det N_common_animate_dobj | N_prop_dobj
+NP_animate_dobj_noPP: Det N_common_animate_dobj | N_prop_dobj
 
-NP_animate_dobj -> Det N_common_animate_dobj | Det N_common_animate_dobj PP_loc \
-                 | N_prop_dobj
+NP_animate_dobj: NP_animate_dobj1 | NP_animate_dobj2 | N_prop_dobj
+NP_animate_dobj1: Det N_common_animate_dobj
+NP_animate_dobj2: Det N_common_animate_dobj PP_loc
                  
-NP_animate_iobj -> Det N_common_animate_iobj | N_prop_iobj
+NP_animate_iobj: NP_animate_iobj1 | N_prop_iobj
+NP_animate_iobj1: Det N_common_animate_iobj
 
-NP_animate_nsubj -> Det N_common_animate_nsubj | N_prop_nsubj
+NP_animate_nsubj: NP_animate_nsubj1 | N_prop_nsubj
+NP_animate_nsubj1: Det N_common_animate_nsubj
 
-NP_animate_nsubjpass -> Det N_common_animate_nsubjpass | N_prop_nsubjpass
+NP_animate_nsubjpass: NP_animate_nsubjpass1 | N_prop_nsubjpass
+NP_animate_nsubjpass1: Det N_common_animate_nsubjpass
 
-NP_inanimate_dobj -> Det N_common_inanimate_dobj | Det N_common_inanimate_dobj PP_loc
+NP_inanimate_dobj: NP_inanimate_dobj1 | NP_inanimate_dobj2
+NP_inanimate_dobj1: Det N_common_inanimate_dobj
+NP_inanimate_dobj2: Det N_common_inanimate_dobj PP_loc
 
-NP_inanimate_dobj_noPP -> Det N_common_inanimate_dobj
+NP_inanimate_dobj_noPP: Det N_common_inanimate_dobj
 
-NP_inanimate_nsubjpass -> Det N_common_inanimate_nsubjpass
+NP_inanimate_nsubjpass: Det N_common_inanimate_nsubjpass
 
-NP_on -> Det N_on PP_loc | Det N_on
+NP_on: NP_on1 | NP_on2
+NP_on1: Det N_on PP_loc
+NP_on2: Det N_on
 
-NP_in -> Det N_in PP_loc | Det N_in
+NP_in: NP_in1 | NP_in2
+NP_in1: Det N_in PP_loc
+NP_in2: Det N_in
 
-NP_beside -> Det N_beside PP_loc | Det N_beside
+NP_beside: NP_bedside1 | NP_bedside2
+NP_bedside1: Det N_beside PP_loc
+NP_bedside2: Det N_beside
 
-Det -> 'the' | 'a'
-C -> 'that'
-AUX -> 'was'
-BY -> 'by'
-N_common_animate_dobj -> {animate_nouns_str}
-N_common_animate_iobj -> {animate_nouns_str}
-N_common_animate_nsubj -> {animate_nouns_str}
-N_common_animate_nsubjpass -> {animate_nouns_str}
-N_common_inanimate_dobj -> {inanimate_nouns_str}
-N_common_inanimate_nsubjpass -> {inanimate_nouns_str}
-N_prop_dobj -> {proper_nouns_str}
-N_prop_iobj -> {proper_nouns_str}
-N_prop_nsubj -> {proper_nouns_str}
-N_prop_nsubjpass -> {proper_nouns_str}
-N_on -> {on_nouns_str}
-N_in -> {in_nouns_str}
-N_beside -> {beside_nouns_str}
-V_trans_omissible -> {V_trans_omissible_str}
-V_trans_omissible_pp -> {V_trans_omissible_pp_str}
-V_trans_not_omissible -> {V_trans_not_omissible_str}
-V_trans_not_omissible_pp -> {V_trans_not_omissible_pp_str}
-V_cp_taking -> {V_cp_taking_str}
-V_inf_taking -> {V_inf_taking_str}
-V_unacc -> {V_unacc_str}
-V_unacc_pp -> {V_unacc_pp_str}
-V_unerg -> {V_unerg_str}
-V_inf -> {V_inf_str}
-V_dat -> {V_dat_str}
-V_dat_pp -> {V_dat_pp_str}
+Det: 'the' | 'a'
+C: 'that'
+AUX: 'was'
+BY: 'by'
+N_common_animate_dobj: {animate_nouns_str}
+N_common_animate_iobj: {animate_nouns_str}
+N_common_animate_nsubj: {animate_nouns_str}
+N_common_animate_nsubjpass: {animate_nouns_str}
+N_common_inanimate_dobj: {inanimate_nouns_str}
+N_common_inanimate_nsubjpass: {inanimate_nouns_str}
+N_prop_dobj: {proper_nouns_str}
+N_prop_iobj: {proper_nouns_str}
+N_prop_nsubj: {proper_nouns_str}
+N_prop_nsubjpass: {proper_nouns_str}
+N_on: {on_nouns_str}
+N_in: {in_nouns_str}
+N_beside: {beside_nouns_str}
+V_trans_omissible: {V_trans_omissible_str}
+V_trans_omissible_pp: {V_trans_omissible_pp_str}
+V_trans_not_omissible: V_trans_not_omissible_str}
+V_trans_not_omissible_pp: {V_trans_not_omissible_pp_str}
+V_cp_taking: {V_cp_taking_str}
+V_inf_taking: {V_inf_taking_str}
+V_unacc: {V_unacc_str}
+V_unacc_pp: {V_unacc_pp_str}
+V_unerg: {V_unerg_str}
+V_inf: {V_inf_str}
+V_dat: {V_dat_str}
+V_dat_pp: {V_dat_pp_str}
 
-PP_iobj -> P_iobj NP_animate_iobj
+PP_iobj: P_iobj NP_animate_iobj
 
-PP_loc -> P_on NP_on | P_in NP_in | P_beside NP_beside
+PP_loc: PP_loc1 | PP_loc2 | PP_loc3
+PP_loc1: P_on NP_on
+PP_loc2: P_in NP_in
+PP_loc3: P_beside NP_beside
 
-P_iobj -> 'to'
-P_on -> 'on'
-P_in -> 'in'
-P_beside -> 'beside'
-INF -> 'to'
+P_iobj: 'to'
+P_on: 'on'
+P_in: 'in'
+P_beside: 'beside'
+INF: 'to'
 
 """.format(animate_nouns_str=animate_nouns,
            inanimate_nouns_str=inanimate_nouns,
