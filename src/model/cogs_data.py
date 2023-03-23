@@ -480,4 +480,5 @@ def parse_cogs(scan_command):
     #         continue
     #     positions.append(current_position)
     #     types.append(scan_token_to_type[node.data.value])
-    return positions, types
+    # return positions, types
+    pass
