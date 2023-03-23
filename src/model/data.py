@@ -1,8 +1,23 @@
+import urllib
 
 import torch
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict
+
+def download_file(url, filepath, verbose=False):
+    if verbose:
+        print(f"Downloading \"{url}\" to \"{filepath}\"...")
+
+    # create directory structure if it doesn't exist
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    # create file to download to if it doesn't exist
+    try:
+        open(filepath, 'a').close()
+    except OSError:
+        print(f"Cannot download \"{url}\" to \"{filepath}\" because the target file cannot be opened or created")
+    urllib.request.urlretrieve(url, filepath)
 
 @dataclass
 class Vocabulary:
