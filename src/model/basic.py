@@ -113,3 +113,29 @@ def reverse_padded_sequence(inputs, lengths, batch_first=False):
     if not batch_first:
         reversed_inputs = reversed_inputs.transpose(0, 1)
     return reversed_inputs
+
+def splice_in_types(batch, positions, types, span_size):
+    # helpful: https://stackoverflow.com/questions/55881002/pytorch-tensor-indexing-how-to-gather-rows-by-tensor-containing-indices
+    # torch.gather: https://pytorch.org/docs/stable/generated/torch.gather.html
+
+    B, L, T = batch.shape
+    new_L = L + 1 - span_size
+
+    # build index matrices for forward shift
+    shifts_fwd = positions.unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(1).repeat_interleave(L, dim=1)
+    arange_fwd = torch.arange(L).unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(0).repeat_interleave(B, dim=0)
+    idxs_fwd = (arange_fwd + shifts_fwd) % L
+
+    # shift forward
+    batch_shifted = torch.gather(batch, 1, idxs_fwd)
+    spliced_shifted = torch.concat((types.unsqueeze(1), batch_shifted[:, span_size:, :]), dim=1)
+
+    # build index matrices for backward shift
+    shifts_back = positions.unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(1).repeat_interleave(new_L, dim=1)
+    arange_back = torch.arange(new_L).unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(0).repeat_interleave(B, dim=0)
+    idxs_back = (arange_back - shifts_back) % (new_L)
+
+    # shift backward
+    spliced = torch.gather(spliced_shifted, 1, idxs_back)
+
+    return spliced

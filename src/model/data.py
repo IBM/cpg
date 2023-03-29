@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict
+import os
 
 def download_file(url, filepath, verbose=False):
     if verbose:

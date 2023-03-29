@@ -14,8 +14,8 @@ SCAN_LENGTH_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/maste
 SCAN_LENGTH_TRAIN_FILEPATH = "./src/model/scan_data/SCAN_length_train.txt"
 SCAN_LENGTH_TEST_FILEPATH = "./src/model/scan_data/SCAN_length_test.txt"
 
-SCAN_ADD_TURN_LEFT_TRAIN_URL = "https://github.com/brendenlake/SCAN/blob/master/add_prim_split/tasks_train_addprim_turn_left.txt"
-SCAN_ADD_TURN_LEFT_TEST_URL = "https://github.com/brendenlake/SCAN/blob/master/add_prim_split/tasks_test_addprim_turn_left.txt"
+SCAN_ADD_TURN_LEFT_TRAIN_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_train_addprim_turn_left.txt"
+SCAN_ADD_TURN_LEFT_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/master/add_prim_split/tasks_test_addprim_turn_left.txt"
 SCAN_ADD_TURN_LEFT_TRAIN_FILEPATH = "scan_data/SCAN_add_turn_left_train.txt"
 SCAN_ADD_TURN_LEFT_TEST_FILEPATH = "scan_data/SCAN_add_turn_left_test.txt"
 
@@ -34,7 +34,7 @@ SCAN_ADD_JUMP_4_TEST_URL = "https://raw.githubusercontent.com/brendenlake/SCAN/m
 SCAN_ADD_JUMP_4_TRAIN_FILEPATH = "scan_data/SCAN_add_jump_4_train.txt"
 SCAN_ADD_JUMP_4_TEST_FILEPATH = "scan_data/SCAN_add_jump_4_test.txt"
 
-SCAN_ADD_JUMP_0_NO_JUMP_OVERSAMPLING_FILEPATH = "./src/model/scan_data/SCAN_add_jump_0_train_no_jump_oversampling.txt"
+SCAN_ADD_JUMP_0_NO_JUMP_OVERSAMPLING_FILEPATH = "scan_data/SCAN_add_jump_0_train_no_jump_oversampling.txt"
 
 TK_SIMPLE_TRAIN_FILEPATH = "scan_data/simple_train.txt"
 TK_SIMPLE_TEST_FILEPATH = "scan_data/simple_test.txt"
@@ -166,21 +166,16 @@ class ScanTypes(IntEnum):
     J = 8
     C1 = 9
     C2 = 10
-    F = 11
-    G = 12
-    S1 = 13
-    S2 = 14
-    V1 = 15
-    V2 = 16
-    V3 = 17
-    V4 = 18
-    V5 = 19
-    V6 = 20
-    E1 = 21
-    E2 = 22
-    E3 = 23
-    E4 = 24
-    PAD = 25
+    L = 11
+    S1 = 12
+    S2 = 13
+    V1 = 14
+    V2 = 15
+    V3 = 16
+    V4 = 17
+    V5 = 18
+    V6 = 19
+    PAD = 20
 
 
 scan_token_to_type = {
@@ -199,8 +194,7 @@ scan_token_to_type = {
     "turn": ScanTypes.T,
     "c1": ScanTypes.C1,
     "c2": ScanTypes.C2,
-    "f": ScanTypes.F,
-    "g": ScanTypes.G,
+    "l": ScanTypes.L,
     "s1": ScanTypes.S1,
     "s2": ScanTypes.S2,
     "v1": ScanTypes.V1,
@@ -209,31 +203,22 @@ scan_token_to_type = {
     "v4": ScanTypes.V4,
     "v5": ScanTypes.V5,
     "v6": ScanTypes.V6,
-    "e1": ScanTypes.E1,
-    "e2": ScanTypes.E2,
-    "e3": ScanTypes.E3,
-    "e4": ScanTypes.E4,
     "<PAD>": ScanTypes.PAD
 }
 
 scan_grammar = """
-    start: c1 | c2 | s1 | s2 | v1 | v2 | v3 | v4 | v5 | v6 | a
-    c1: f s1 | f s2 | f a | f v1 | f v2 | f v3 | f v4 | f v5 | f v6
-    c2: g s1 | g s2 | g a | g v1 | g v2 | g v3 | g v4 | g v5 | g v6
-    f: s1 i | s2 i | a i | v1 i | v2 i | v3 i | v4 i | v5 i | v6 i
-    g: s1 j | s2 j | a j | v1 j | v2 j | v3 j | v4 j | v5 j | v6 j
+    start: c1 | c2 | l
+    c1: l i l
+    c2: l j l
+    l: s1 | s2 | a | v1 | v2 | v3 | v4 | v5 | v6
     s1: v1 p | v2 p | v3 p | v4 p | v5 p | v6 p | a p
     s2: v1 q | v2 q | v3 q | v4 q | v5 q | v6 q | a q
     v1: a d
     v2: t d
-    v3: e1 d
-    v4: e2 d
-    v5: e3 d
-    v6: e4 d
-    e1: a m
-    e2: a n
-    e3: t m
-    e4: t n
+    v3: a m d
+    v4: a n d
+    v5: t m d
+    v6: t n d
     a: WALK | LOOK | RUN | JUMP
     t: TURN
     m: OPPOSITE
@@ -271,15 +256,21 @@ def parse_scan(scan_command):
     previous_index = 0
     positions = []
     types = []
+    spans = []
     for node in parse_tree.iter_subtrees_topdown():
         if previous_index < node.meta.start_pos:
             current_position += 1
             previous_index = node.meta.start_pos
-        if node.data.value in ["a", "t", "m", "n", "d", "p", "q", "i", "j", "start"]:
+        if node.data.value in ['a', 't', 'm', 'n', 'd', 'p', 'q', 'i', 'j', 'l', 'start']:
             continue
+        # ternary rules
+        if node.data.value in ['v3', 'v4', 'v5', 'v6', 'c1', 'c2']:
+            spans.append(3)
+        else:
+            spans.append(2)
         positions.append(current_position)
         types.append(scan_token_to_type[node.data.value])
-    return positions, types
+    return positions, types, spans
 
 
 def get_decoding_force(dl, dr, target_types, positions):

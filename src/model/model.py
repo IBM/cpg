@@ -228,8 +228,13 @@ class SCANModel(nn.Module):
                 type = scan_word_to_type[word]
                 self.scan_token_to_type_map[token_idx] = type
 
-        self.decoder_sem = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 8 * 3)
-                                          for i in range(hidden_type_dim - 9)])
+        self.decoder_sem = nn.ModuleList()
+        # for 2 span
+        self.decoder_sem.append(nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 8 * 3)
+                                                    for _ in range(hidden_type_dim - 9)]))
+        # for 3 span
+        self.decoder_sem.append(nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 8 * 4)
+                                                    for _ in range(hidden_type_dim - 9)]))
         # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # model
@@ -261,16 +266,15 @@ class SCANModel(nn.Module):
         init.normal_(self.embedding.weight.data, mean=0, std=0.01)
         self.encoder.reset_parameters()
 
-    def forward(self, x, length, force=None, positions_force=None, types_force=None):
+    def forward(self, x, length, force=None, positions_force=None, types_force=None, spans_force=None):
         # TK DEBUG
         self.embedding.weight.requires_grad=False
         x_embed = self.embedding(x)
 
         # TK DEBUG
         # x_embed = self.dropout(x_embed)
-        sentence_vector, _, decoding, hom_loss, dt_all, logits_init = self.encoder(input=x_embed,
-                                                                      length=length,
-                                                                      input_tokens=x,
-                                                                      positions_force=positions_force,
-                                                                      types_force=types_force)
-        return decoding, hom_loss, dt_all, logits_init
+        decoding= self.encoder(input=x_embed, length=length, input_tokens=x,
+                               positions_force=positions_force,
+                               types_force=types_force,
+                               spans_force=spans_force)
+        return decoding

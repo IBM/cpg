@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO,
 
 def train(args):
     # load train and test scan_data
-    train_data, test_data = load_SCAN_add_turn_left()
+    train_data, test_data = load_SCAN_add_jump_0_no_jump_oversampling()
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train scan_data set size: {len(train_data)}")
@@ -36,7 +36,6 @@ def train(args):
                            base_tokens=['<PAD>', '<SOS>', '<EOS>', '<UNK>'])
     logging.info(f"X Vocab size: {len(x_vocab)}")
     logging.info(f"Y Vocab size: {len(y_vocab)}")
-
     def select(x, curriculum_stage):
         if curriculum_stage < 4:
             if "and" in x[0] or "after" in x[0]:
@@ -82,13 +81,13 @@ def train(args):
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len)
-    
+    print('there')
     model = SCANModel(model=args.model,
                       y_vocab=y_vocab,
                       x_vocab=x_vocab,
                       word_dim=args.word_dim,
                       hidden_value_dim=args.hidden_dim,
-                      hidden_type_dim=27,   # FIXME
+                      hidden_type_dim=21,
                       decoder_hidden_dim=args.decoder_hidden_dim,
                       decoder_num_layers=args.decoder_num_layers,
                       use_leaf_rnn=args.leaf_rnn,
@@ -99,6 +98,7 @@ def train(args):
                       max_y_seq_len=args.max_y_seq_len,
                       use_prim_type_oracle=args.use_prim_type_oracle,
                       syntactic_supervision=args.syntactic_supervision)
+    print('here')
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -125,35 +125,33 @@ def train(args):
     valid_summary_writer = SummaryWriter(
         log_dir=os.path.join(args.save_dir, 'log', 'valid'))
 
-    def run_iter(batch, average_accuracy, is_training=False, use_hom_loss=False, verbose=False):
+    def run_iter(batch, average_accuracy, is_training=False, verbose=False):
         model.train(is_training)
         batch_x, batch_y = batch
         B, L = batch_x.size()
         if args.syntactic_supervision:
             positions_force = []
             types_force = []
+            spans_force = []
             x_tokens = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
             for i in range(len(x_tokens)):
                 x_tokens[i] = " ".join(x_tokens[i])
-            #print("x tokens:", x_tokens)
             for i in range(B):
-                positions, types = parse_scan(x_tokens[i])
+                positions, types, spans = parse_scan(x_tokens[i])
                 positions_force.append(positions)
                 types_force.append(types)
-            #print("types force:", types_force)
+                spans_force.append(spans)
         else:
             positions_force = None
             types_force = None
+            spans_force = None
         if is_training and args.use_teacher_forcing:
             force = batch_y
         else:
             force = None
-
-        decoding, hom_loss, dt_all, logits_init = model(x=batch_x, length=torch.full((B, 1), L).view(B),
-                                                        force=force, positions_force=positions_force, types_force=types_force)
+        decoding = model(x=batch_x, length=torch.full((B, 1), L).view(B),force=force,
+                         positions_force=positions_force, types_force=types_force, spans_force=spans_force)
         decoding_idx = decoding.argmax(-1)
-        # temp = max(1.0-average_accuracy, 0.2)
-        # decoding_idx = torch.nn.functional.gumbel_softmax(decoding.log_softmax(-1), tau=temp, hard=False).argmax(-1)
         if verbose:
             input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
             expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
@@ -190,7 +188,6 @@ def train(args):
         # loss = F.cross_entropy(torch.flatten(decoding_log, start_dim=0, end_dim=1), expected_padded.flatten().long())
         loss = F.cross_entropy(torch.flatten(decoding, start_dim=0, end_dim=1), expected_padded.flatten().long())
 
-        print("cross entropy loss: ", loss)
         # compute template loss
         # dt-all: B x ? x 8 (probs -- verify)
         # match: B x max_len (49)
@@ -212,21 +209,16 @@ def train(args):
         # compute loss
         if is_training:
             optimizer.zero_grad()
-            # loss = loss + template_loss
-            if use_hom_loss:
-                loss += hom_loss
             loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
-        return loss, accuracy, hom_loss
+        return loss, accuracy
 
     def add_scalar_summary(summary_writer, name, value, step):
         if torch.is_tensor(value):
             value = value.item()
         summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
 
-    # num_train_batches = train_loader.num_batches
-    # validate_every = num_train_batches * 3
     best_vaild_accuacy = 0
     iter_count = 1
     train_accuracy_stage_total = 0.0
@@ -234,10 +226,14 @@ def train(args):
     iter_count_stage = 1
     validated = False
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_stage > .75:
+        if args.use_curriculum and train_accuracy_stage > .9:
+            if curriculum_stage == 2:
+                for i in [12, 13, 14, 15]:
+                    model.encoder.treelstm_layer.record_template(i, 2)
+            if curriculum_stage == 3:
+                for i in [9, 10, 16, 17, 18, 19]:
+                    model.encoder.treelstm_layer.record_template(i, 3)
             curriculum_stage += 1
-            model.reset_gumbel_temp(1.0)
-            #filter = lambda x: select(x, curriculum_stage
             filter_fn = lambda x: len(x[0]) <= curriculum_stage
             train_data_curriculum = list(filter(filter_fn, train_data))
             print(train_data_curriculum)
@@ -263,28 +259,19 @@ def train(args):
                                         max_y_seq_len=args.max_y_seq_len)
             train_accuracy_stage_total = 0.0
             train_accuracy_stage = 0.0
-            iter_count_stage = 1
+            iter_count_stage = 0
             validated = False
             # TK worst_train_accuracy_epoch = 0.0
         for batch_iter, train_batch in enumerate(train_loader):
             if args.use_curriculum:
                 print("\nstage: ", curriculum_stage)
             print("\niteration:", iter_count)
-            if iter_count > -1:
-                train_loss, train_accuracy, hom_loss = run_iter(batch=train_batch,
-                                                                average_accuracy=train_accuracy_stage,
-                                                                is_training=True,
-                                                                use_hom_loss=True,
-                                                                verbose=True)
-                print("homomorphic loss: %1.4f" %hom_loss.item())
-            else:
-                train_loss, train_accuracy, _ = run_iter(batch=train_batch,
-                                                         average_accuracy=train_accuracy_stage,
-                                                         is_training=True)
+            train_loss, train_accuracy = run_iter(batch=train_batch,
+                                                    average_accuracy=train_accuracy_stage,
+                                                    is_training=True,
+                                                    verbose=True)
             train_accuracy_stage_total += train_accuracy
             train_accuracy_stage = train_accuracy_stage_total / (iter_count_stage+1)
-            # if train_accuracy_epoch < worst_train_accuracy_epoch:
-            #     worst_train_accuracy_epoch = train_accuracy_epoch
 
             print("iteration loss: %1.4f" %train_loss.item())
             print("iteration train accuracy: %1.4f" %train_accuracy.item())
@@ -295,26 +282,27 @@ def train(args):
 
             iter_count += 1
             iter_count_stage += 1
-            if (iter_count + 1) % 100 == 0:
-                model.reduce_gumbel_temp(iter_count_stage)
+            if (iter_count + 1) % 10 == 0:
+                temp = max(1.0 - train_accuracy_stage, 0.5)
+                model.reset_gumbel_temp(temp)
             # TK DEBUG
             print("iter count: ", iter_count)
 
             # validate once for each stage, and once every 500 iterations at stage 6
-            if (not validated and train_accuracy_stage > 0.9) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
+            if (not validated and train_accuracy_stage > 0.89) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
                 validated = True
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
                 k = randint(0, num_valid_batches - 1)
                 for i, valid_batch in enumerate(valid_loader):
                     if args.print_in_valid and i == k:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
-                                                                 average_accuracy=train_accuracy_stage,
-                                                                 verbose=True)
+                        valid_loss, valid_accuracy = run_iter(batch=valid_batch,
+                                                              average_accuracy=train_accuracy_stage,
+                                                              verbose=True)
                     else:
-                        valid_loss, valid_accuracy, _ = run_iter(batch=valid_batch,
-                                                                 average_accuracy=train_accuracy_stage,
-                                                                 verbose=True)
+                        valid_loss, valid_accuracy = run_iter(batch=valid_batch,
+                                                              average_accuracy=train_accuracy_stage,
+                                                              verbose=True)
                     valid_loss_sum += valid_loss.item()
                     valid_accuracy_sum += valid_accuracy.item()
                 valid_loss = valid_loss_sum / num_valid_batches
@@ -329,7 +317,7 @@ def train(args):
                 # TK DEBUG
                 print("semantic loss: %1.4f" % valid_loss)
                 print("train accuracy: %1.4f" % valid_accuracy)
-                if valid_accuracy > best_vaild_accuacy:
+                if valid_accuracy >= best_vaild_accuacy:
                     best_vaild_accuacy = valid_accuracy
                     model_filename = (f'model-{progress:.2f}'
                                       f'-{valid_loss:.4f}'

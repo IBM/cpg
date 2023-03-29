@@ -10,42 +10,6 @@ import numpy as np
 from src.model.scan_data import ScanTypes
 
 
-class BinaryTreeLSTMLayer(nn.Module):
-
-    def __init__(self, hidden_dim):
-        super(BinaryTreeLSTMLayer, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.comp_linear = nn.Linear(in_features=2 * hidden_dim,
-                                     out_features=5 * hidden_dim)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        init.orthogonal_(self.comp_linear.weight.data)
-        init.constant_(self.comp_linear.bias.data, val=0)
-
-    def forward(self, l=None, r=None):
-        """
-        Args:
-            l: A (h_l, c_l) tuple, where each value has the size
-                (batch_size, max_length, hidden_dim).
-            r: A (h_r, c_r) tuple, where each value has the size
-                (batch_size, max_length, hidden_dim).
-        Returns:
-            h, c: The hidden and cell state of the composed parent,
-                each of which has the size
-                (batch_size, max_length - 1, hidden_dim).
-        """
-
-        hl, cl = l
-        hr, cr = r
-        hlr_cat = torch.cat([hl, hr], dim=2)
-        treelstm_vector = self.comp_linear(hlr_cat)
-        i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
-        c = (cl * (fl + 1).sigmoid() + cr * (fr + 1).sigmoid()
-             + u.tanh() * i.sigmoid())
-        h = o.sigmoid() * c.tanh()
-        return h, c
-
 class FeedForward(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
         super().__init__()
@@ -61,6 +25,7 @@ class FeedForward(nn.Module):
             if i != len(self.layers) - 1:
                 x = F.relu(x)
         return x
+
 
 class TypePredictor(nn.Module):
 
@@ -110,193 +75,100 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.type_embedding = nn.Embedding(num_embeddings=self.hidden_type_dim,
                                            embedding_dim=self.hidden_value_dim)
         self.type_embedding.weight.requires_grad = False
-        # TK DEBUG
-
         self.length_predictor = nn.Linear(self.hidden_value_dim, 4) # TK FIXME remove hardcoding template length
+        self.templates = nn.ParameterDict()
         self.reset_parameters()
+
+    def reset_gumbel_temp(self, new_temp):
+        self.gumbel_temperature = new_temp
 
     def reset_parameters(self):
         for i in range(self.hidden_type_dim - 9):
-            init.orthogonal_(self.comp_linear_v[i].weight.data)
-            #init.orthogonal_(self.comp_linear_t.weight.scan_data)    # TODO: is this what we want?
+            init.orthogonal_(self.comp_linear_v[i].weight.data) # TODO: is this what we want?
             init.constant_(self.comp_linear_v[i].bias.data, val=0)
-            #init.constant_(self.comp_linear_t.bias.scan_data, val=0)
-            # type predictor's parameter are not reset
 
-    def apply_decoder_template(self, dt_sample, input_cat):
-        # dt - B x L x K x 2
-        # dt_sample - B x L x K
-        # input_cat - B x L x 2M x V
+    def record_template(self, type, span):
+        type_embedding = self.type_embedding(torch.tensor(type))
+        self.templates[str(type)] = torch.nn.functional.gumbel_softmax(
+                                        self.decoder_sem[span-2][type-9](type_embedding).view(8, span+1).log_softmax(-1),
+                                        tau=1e-10, hard=True).detach()
+        with open('output.txt', 'a') as file:
+            file.write('template for type ' + str(type) + ' is: '
+                        + str(self.templates[str(type)].argmax(-1)) + '\n')
+
+    def apply_decoder_template(self, dt_sample, input_cat, spans):
+        # dt_sample - B x K x N
+        # input_cat - B x N x M x V
         # K is max template sequence length which will be smaller
         # than M the max decoding length
 
-        # sample concatenated input value pair -> B x L x 2M
-        # input_cat_sample = input_cat.argmax(-1)
+        B, N, M, V = input_cat.size()
+        K = dt_sample.size(1)
+        result = torch.zeros(B, M, V)
 
-        # extract the arguments from the input
-        il = input_cat[:, :, :self.max_seq_len, :]
-        ir = input_cat[:, :, self.max_seq_len:, :]
-        K = dt_sample.size(2)
-        B, L, M, V = input_cat.size()
-        M = int(M/2)
-        result = torch.zeros(B, L, M, V)
-
-        # DEBUG
-        # print("template for batch element 5:")
-        # print("left arg: ", il[5])
-        # print("right arg: ", ir[5])
-        # for k in range(L):
-        #     # DEBUG
-        #     print("template: ", dt_sample[5][k])
         pad_vector = torch.zeros(M, V)
         pad_vector[:, 0] = 1.0
         for i in range(B):
-            for k in range(L):
-                idx = 0
-                for t in range(K):  # template index
-                    # template_code = torch.zeros(1, 3)
-                    # template_code[:, dt_sample[i][k][t].argmax(-1)] = 1.0 # already sampled
-                    template_code = dt_sample[i][k][t].unsqueeze(0).float()
-                    choices = torch.stack([il[i][k].flatten(), ir[i][k].flatten(), pad_vector.flatten()], dim=0)
-                    output = torch.mm(template_code, choices).view(M, V)
-                    # copy non-trailing pad part of the output
-                    # DEBUG
-                    # output_len = torch.count_nonzero(output.sum(-1)).tolist()
-                    output_idx = output.argmax(-1)
-                    output_len = 0
-                    for j in range(M):
-                        if output_idx[j] != 0:
-                            output_len = j+1
-                    output_len = min(output_len, M-idx)
-                    result[i][k][idx:idx+output_len] = output[:output_len]
-                    idx = idx + output_len
+            # extract the arguments from the input
+            idx = 0
+            # extract the arguments from the input
+            for t in range(K):  # template index
+                # template_code = torch.zeros(1, 3)
+                # template_code[:, dt_sample[i][k][t].argmax(-1)] = 1.0 # already sampled
+                template_code = dt_sample[i, t, :spans[i]+1].unsqueeze(0).float()
+                choices = [input_cat[i][n].flatten() for n in range(spans[i])]
+                choices.insert(0, pad_vector.flatten())
+                choices = torch.stack(choices, dim=0)
+                output = torch.mm(template_code, choices).view(M, V)
+                # copy non-trailing pad part of the output
+                # DEBUG
+                # output_len = torch.count_nonzero(output.sum(-1)).tolist()
+                output_idx = output.argmax(-1)
+                output_len = 0
+                for j in range(M):
+                    if output_idx[j] != 0:
+                        output_len = j+1
+                output_len = min(output_len, M-idx)
+                result[i][idx:idx+output_len] = output[:output_len]
+                idx = idx + output_len
 
         return result
 
-    def forward(self, l=None, r=None, positions_force=None, target_types=None):
+    def forward(self, decodings, target_types, spans):
         """
         Args:
-            l: A (h_l, c_l, d) tuple, where h_l and c_l have size
-                (batch_size, max_length, hidden_value_dim + hidden_type_dim)
-                and d has size (batch_size, max_seq_len)
-            r: A (h_r, c_r, d) tuple, where h_r and c_r have size
-                (batch_size, max_length, hidden_value_dim + hidden_type_dim)
-                and d has size (batch_size, max_seq_len)
+            decodings: input decodings of size B x N x M x V
         Returns:
-            h, c, d, hom_loss: [0, 1] The hidden and cell state of the composed parent,
-                each of which has the size (batch_size, max_length - 1, hidden_value_dim + hidden_type_dim);
-               [3] the decoding of that parent into the output vocabulary (batch_size, max_seq_len, vocab size);
-                and [4] the homomorphic loss.  The homomorphic loss is the sum of the losses for the abstraction
-               homomorphism and the decoding homomorphism.
+            new_d: output decoding of size B x M x V
+            dt_sample: templates of size B x K x 3
         """
 
-        # extract state from left and right args
-        hl, cl, dl = l
-        hr, cr, dr = r
+        B, N, M, V = decodings.size()
 
-        # extract value and type information
-        hl_v, hl_t = torch.split(hl, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hl
-        hr_v, hr_t = torch.split(hr, [self.hidden_value_dim, self.hidden_type_dim], dim=2)  # hr
-
-        # compute updated hidden state and memory values
-        # TK changed to include type information
-        hlr_cat_v = torch.cat([hl, hr], dim=2)
-        if target_types is not None:
-            B, L, _ = hlr_cat_v.size()
-            treelstm_vector = torch.zeros(B, L, 5 * self.hidden_value_dim)
-            for i in range(B):
-                treelstm_vector[i] = self.comp_linear_v[target_types[i].int() - 9](hlr_cat_v[i])
-        else:
-            treelstm_vector = self.comp_linear_v[0](hlr_cat_v)
-        i, fl, fr, u, o = treelstm_vector.chunk(chunks=5, dim=2)
-        c = (cl * (fl + 1).sigmoid() + cr * (fr + 1).sigmoid()
-               + u.tanh() * i.sigmoid())
-        h_v = o.sigmoid() * c.tanh()
-
-        kl_loss = torch.nn.KLDivLoss(reduction="batchmean")
-        ce_loss = torch.nn.CrossEntropyLoss()
-        if target_types != None:
-            _, new_h_type = self.type_predictor(h_v)
-            B, L, T = new_h_type.shape
-            positions = torch.zeros(B).long()
-            for i in range(B):
-                if positions_force[i] == []:
-                    positions[i] = 0 # default to start
-                else:
-                    positions[i] = positions_force[i][-1]
-            abstraction_hom_loss = F.cross_entropy(torch.clamp(new_h_type[torch.arange(B), positions].view(B, T),
-                                                               min=1e-10, max=1.0).log(),
-                                       target_types.long())
-            new_h = torch.cat([h_v, new_h_type], dim=2)
-        else:
-            hlr_cat_t = torch.cat([hl_t, hr_t], dim=2)
-            _, h_t = self.binary_type_predictor(hlr_cat_t)
-
-            # DEBUG
-            # print("left type: ", hl_t[0, :, :])
-            # print("right type: ", hr_t[0, :, :])
-
-            # predict output type from semantic value
-            _, sem_h_t = self.type_predictor(h_v)
-
-            # compute abstract homomorphic loss to reduce their difference
-            abstraction_hom_loss = kl_loss(h_t.log(), sem_h_t)
-
-            # take output type to be the average of the two predictions
-            new_h_type = (h_t + sem_h_t) / 2.0
-
-            # compute output hidden state
-            new_h = torch.cat([h_v, new_h_type], dim=2)
-
-        new_h_type_idx = new_h_type.argmax(-1).long()
-        B, L, T = new_h_type.shape
-        #new_h_type_idx = F.gumbel_softmax(type_logits, tau=self.gumbel_temperature, dim=-1, hard=True).argmax(-1).long()
         type_embedding = self.type_embedding(target_types)
         # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
         K = 8
-        # dt = torch.zeros(B, L, K, 3)
-        dt_sample = torch.zeros(B, L, K, 3)
+        dt_sample = torch.zeros(B, K, N+1)
         # hard code start template
-        start_template = torch.full((L, K), 2)  # 2 = PAD
-        start_template[:, 0] = 0
-        start_template = F.one_hot(start_template, 3)
+        start_template = torch.full((K, 1), 0).squeeze()  # 0 = PAD
+        start_template[0] = 1
+        start_template = F.one_hot(start_template, N+1)
 
         for i in range(B):
+            s = spans[i]
             # hard code start template
-            if target_types[i] in (25, ScanTypes.E1, ScanTypes.E2, ScanTypes.E3, ScanTypes.E4, ScanTypes.F, ScanTypes.G):
+            if target_types[i] == 20:
                 dt_sample[i] = start_template
+            elif str(target_types[i].item()) in self.templates.keys():
+                dt_sample[i, :, :s+1] = self.templates[str(target_types[i].item())]
             else:
-                # .unsqueeze(0).expand(L, K, 3).log_softmax(-1)
-                dt_sample[i] = torch.nn.functional.gumbel_softmax(
-                    self.decoder_sem[target_types[i]-9](type_embedding[i]).view(K, 3).log_softmax(-1),
+                dt_sample[i, :, :s+1] = torch.nn.functional.gumbel_softmax(
+                    self.decoder_sem[s-2][target_types[i]-9](type_embedding[i]).view(K, s+1).log_softmax(-1),
                     tau=self.gumbel_temperature, hard=True)
 
+        new_d = self.apply_decoder_template(dt_sample, decodings, spans)
 
-            # mask = self.length_predictor(type_embedding[i]).log_softmax(-1)
-            # mask_idx = torch.nn.functional.gumbel_softmax(mask, tau=self.gumbel_temperature, hard=True)
-            # mask_idx = mask_idx + (1 - torch.cummax(mask_idx, -1)[0])
-            # mask_idx = mask_idx.unsqueeze(0).unsqueeze(2).expand(L, K, 3)
-            # dt_sample[i] = dt_sample[i] * mask_idx
-
-        #dt_log = torch.clamp(dt, min=1e-15, max=1.0).log()
-        # TK DEBUG
-        # dt_sample = torch.nn.functional.gumbel_softmax(dt_log, tau=self.gumbel_temperature, hard=True)
-
-        #dt_sample = dt_log.softmax(-1).argmax(-1)
-        # TK DEBUG
-        # print("type for batch: ", target_types)
-        # print("template for batch: ", dt_sample.argmax(-1))
-
-        # compute concatenated input decodings: (B x L x M x V), (B x L x M) -> B x L x 2M x V
-        # B = batch size, L = sentence length, M = max decoded seq len
-        # last dimension holds logits
-        d_cat = torch.cat([dl, dr], dim=2).float()
-        new_d = self.apply_decoder_template(dt_sample, d_cat)
-        # decoding = F.one_hot(torch.flatten(new_d, start_dim=0, end_dim=1),
-        #                      num_classes=self.vocab_size).view(B, L, self.max_seq_len, self.vocab_size)
-
-        # TK DEBUG
-        return (new_h, c, new_d), abstraction_hom_loss, dt_sample
+        return new_d, dt_sample
 
     def reduce_gumbel_temp(self, factor, iter, verbose=False):
         # TK DEBUG
@@ -376,6 +248,7 @@ class TypedBinaryTreeLSTM(nn.Module):
 
     def reset_gumbel_temp(self, new_temp):
         self.type_predictor.gumbel_temp = new_temp
+        self.treelstm_layer.reset_gumbel_temp(new_temp)
         self.binary_type_predictor.gumbel_temp = new_temp
         self.treelstm_layer.gumbel_temp = new_temp
 
@@ -401,237 +274,75 @@ class TypedBinaryTreeLSTM(nn.Module):
         init.normal_(self.comp_query.data, mean=0, std=0.01)
 
     @staticmethod
-    def update_state(old_state, new_state, done_mask):
-        old_h, old_c, old_d = old_state
-        new_h, new_c, new_d = new_state
-        done_mask = done_mask.float().unsqueeze(1).unsqueeze(2)
-        h = done_mask * new_h + (1 - done_mask) * old_h[:, :-1, :]
-        c = done_mask * new_c + (1 - done_mask) * old_c[:, :-1, :]
-        done_mask = done_mask.unsqueeze(3)
-        d = done_mask * new_d + (1 - done_mask) * old_d[:, :-1, :, :]
-        return h, c, d
-
-    def select_composition(self, old_state, new_state, mask, positions_force=None):
-        new_h, new_c, new_d = new_state
-        old_h, old_c, old_d = old_state
-        old_h_left, old_h_right = old_h[:, :-1, :], old_h[:, 1:, :]
-        old_c_left, old_c_right = old_c[:, :-1, :], old_c[:, 1:, :]
-        old_d_left, old_d_right = old_d[:, :-1, :, :], old_d[:, 1:, :, :]
-
-        comp_weights = (self.comp_query * new_h).sum(-1)
-        comp_weights = comp_weights / math.sqrt(self.hidden_value_dim + self.hidden_type_dim)
-        B, L = comp_weights.size()
-        if positions_force != None:
-            positions = torch.zeros(B).long()
-            for i in range(B):
-                if positions_force[i] == []:
-                    positions[i] = 0
-                else:
-                    positions[i] = positions_force[i][-1]
-            select_mask = F.one_hot(positions, comp_weights.size(1))
-            select_mask = select_mask.float()
-        elif not self.is_lstm:
-            if self.training:
-                select_mask = basic.st_gumbel_softmax(
-                    logits=comp_weights, temperature=self.gumbel_temperature,
-                    mask=mask)
-            else:
-                select_mask = basic.greedy_select(logits=comp_weights, mask=mask)
-                select_mask = select_mask.float()
-        else:
-            select_mask = F.one_hot(torch.zeros(comp_weights.size(0)).long(), comp_weights.size(1))
-            select_mask = select_mask.float()
-
-        # mask hidden state, memory, and decodings
-        new_h, selected_h = self.mask(old_h_left, old_h_right, select_mask, new_h)
-        new_c, _ = self.mask(old_c_left, old_c_right, select_mask, new_c)
-        B, L, M, V = new_d.size()
-        new_d, selected_d = self.mask(old_d_left.view(B, L, M*V),
-                                      old_d_right.view(B, L, M*V),
-                                      select_mask,
-                                      new_d.view(B, L, M*V))
-        return new_h, new_c, new_d.view(B, L, M, V), select_mask, selected_h
-
-    @staticmethod
-    def mask(old_left, old_right, select_mask, new):
-        select_mask_expand = select_mask.unsqueeze(2).expand_as(new)
-        select_mask_cumsum = select_mask.cumsum(1)
-        left_mask = 1 - select_mask_cumsum
-        left_mask_expand = left_mask.unsqueeze(2).expand_as(old_left)
-        right_mask = select_mask_cumsum - select_mask
-        right_mask_expand = right_mask.unsqueeze(2).expand_as(old_right)
-        new = (select_mask_expand * new
-                 + left_mask_expand * old_left
-                 + right_mask_expand * old_right)
-        selected = (select_mask_expand * new).sum(1)
-        return new, selected
-
-    @staticmethod
     def int_to_one_hot(x, size):
         result = torch.tensor([0 for _ in range(size)])
         result[x] = 1
         return result
 
-    def forward(self, input, length, input_tokens, return_select_masks=False, positions_force=None, types_force=None):
+    def forward(self, input, length, input_tokens, positions_force=None, types_force=None, spans_force=None):
         max_depth = input.size(1)
-        length_mask = basic.sequence_mask(sequence_length=length,
-                                          max_length=max_depth)
-        select_masks = []
-        hom_loss_sum = 0
-        #print("input token:", input_tokens[0]) # debug
-        if self.use_leaf_rnn:
-            hs = []
-            cs = []
-            batch_size, max_length, _ = input.size()
-            zero_state = input.data.new_zeros(batch_size, self.hidden_dim)
-            h_prev = c_prev = zero_state
-            for i in range(max_length):
-                h, c = self.leaf_rnn_cell(
-                    input=input[:, i, :], hx=(h_prev, c_prev))
-                hs.append(h)
-                cs.append(c)
-                h_prev = h
-                c_prev = c
-            hs = torch.stack(hs, dim=1)
-            cs = torch.stack(cs, dim=1)
-
-            if self.bidirectional:
-                hs_bw = []
-                cs_bw = []
-                h_bw_prev = c_bw_prev = zero_state
-                lengths_list = list(length.data)
-                input_bw = basic.reverse_padded_sequence(
-                    inputs=input, lengths=lengths_list, batch_first=True)
-                for i in range(max_length):
-                    h_bw, c_bw = self.leaf_rnn_cell_bw(
-                        input=input_bw[:, i, :], hx=(h_bw_prev, c_bw_prev))
-                    hs_bw.append(h_bw)
-                    cs_bw.append(c_bw)
-                    h_bw_prev = h_bw
-                    c_bw_prev = c_bw
-                hs_bw = torch.stack(hs_bw, dim=1)
-                cs_bw = torch.stack(cs_bw, dim=1)
-                hs_bw = basic.reverse_padded_sequence(
-                    inputs=hs_bw, lengths=lengths_list, batch_first=True)
-                cs_bw = basic.reverse_padded_sequence(
-                    inputs=cs_bw, lengths=lengths_list, batch_first=True)
-                hs = torch.cat([hs, hs_bw], dim=2)
-                cs = torch.cat([cs, cs_bw], dim=2)
-            state = (hs, cs)
-        else:
-            state_v = self.word_linear(input)
-            h_v, c = state_v.chunk(chunks=2, dim=2)
-            h_t_samples, h_t = self.type_predictor(h_v)
-            # decode each word separately ((B*L), max_seq_len, target vocab size)
-            # reshape to B x L x max_seq_len x len(decoder.vocab)
-            target_vocab_size = len(self.decoder_init.vocab)
-            B, L, M = input.size()
-            if self.scan_token_to_type_map is not None:
-                # compute cross entropy loss of predicted type against the oracle
-                B, L, T_t = h_t.shape
-                target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-                hom_loss_sum = F.cross_entropy(torch.clamp(h_t.view(B*L, T_t), min=1e-10, max=1.0).log(), target_types)
-            # _, initial_decodings = self.decoder_init.decode(torch.flatten(input, start_dim=0, end_dim=1),
-            #
-            #                                                 self.max_seq_len)
-            # TK DEBUG FIXME: get the 49 from somewhere
-            initial_decodings = torch.zeros(B, L, 49, target_vocab_size)
-            initial_decodings[:, :, 0, :] = self.initial_decoder(h_v).softmax(-1)
-            pad_decoding = torch.tensor([0 for _ in range(target_vocab_size)])
-            pad_decoding[0] = 1
-            for i in range(B):
-                for j in range(L):
-                    if target_types[i*L+j] not in [0, 4]:
-                        initial_decodings[i, j, 0, :] = pad_decoding
-                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("run"):
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_RUN"), target_vocab_size)
-                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("look"):
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_LOOK"), target_vocab_size)
-                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("walk"):
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_WALK"), target_vocab_size)
-                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("jump"):
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_JUMP"), target_vocab_size)
-                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("left"):
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_LEFT"), target_vocab_size)
-                    elif input_tokens[i, j] == self.x_vocab.token_to_idx("right"):
-                        initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_RIGHT"), target_vocab_size)
-
-            # initial_decodings = initial_decodings.view(B, L, self.max_seq_len, target_vocab_size)
-            # initial_decodings = F.one_hot(initial_decodings.view(B * L * self.max_seq_len).long(),
-            #                               num_classes=target_vocab_size).view(B, L,
-            #                                                                   self.max_seq_len,
-            #                                                                   target_vocab_size)
-            dt_all = None
-            
-            # TK DEBUG
-            # new_types = F.one_hot(h_t_samples, num_classes=self.hidden_type_dim)
-            # h = torch.concat((h_v, new_types), dim=2)
-            h = torch.concat((h_v, h_t), dim=2)
-            state = h, c, initial_decodings
-        nodes = []
-        if self.intra_attention:
-            nodes.append(state[0])
-        for i in range(max_depth - 1):
-            h, c, d = state
-            l = (h[:, :-1, :], c[:, :-1, :], d[:, :-1, :, :])
-            r = (h[:, 1:, :], c[:, 1:, :], d[:, 1:, :, :])
-            B, _, _ = h.size()
+        # decode each word separately ((B*L), max_seq_len, target vocab size)
+        # reshape to B x L x max_seq_len x len(decoder.vocab)
+        target_vocab_size = len(self.decoder_init.vocab)
+        B, L, _ = input.size()
+        if self.scan_token_to_type_map is not None:
+            target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
+        # TK DEBUG FIXME: get the 49 from somewhere
+        M = 49
+        initial_decodings = torch.zeros(B, L, M, target_vocab_size)
+        initial_decodings[:, :, 0, :] = self.initial_decoder(input).softmax(-1)
+        decodings = initial_decodings
+        pad_decoding = torch.tensor([0 for _ in range(target_vocab_size)])
+        pad_decoding[0] = 1
+        for i in range(B):
+            for j in range(L):
+                if input_tokens[i, j] == self.x_vocab.token_to_idx("run"):
+                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_RUN"), target_vocab_size)
+                elif input_tokens[i, j] == self.x_vocab.token_to_idx("look"):
+                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_LOOK"), target_vocab_size)
+                elif input_tokens[i, j] == self.x_vocab.token_to_idx("walk"):
+                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_WALK"), target_vocab_size)
+                elif input_tokens[i, j] == self.x_vocab.token_to_idx("jump"):
+                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_JUMP"), target_vocab_size)
+                elif input_tokens[i, j] == self.x_vocab.token_to_idx("left"):
+                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_LEFT"), target_vocab_size)
+                elif input_tokens[i, j] == self.x_vocab.token_to_idx("right"):
+                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_RIGHT"), target_vocab_size)
+                else:
+                    initial_decodings[i, j, 0, :] = pad_decoding
+        for t in range(max_depth - 1):
             if types_force != None:
                 # get target types for this step and remove them
-                target_types = torch.tensor([25 for i in range(B)]) # default to start
+                target_types = torch.tensor([20 for _ in range(B)]) # default to start
                 for k in range(len(types_force)):
                     if types_force[k] != []:
                         target_types[k] = types_force[k][-1]
                         types_force[k].pop(-1)
             else:
                 target_types = None
-            new_state, hom_loss, dt = self.treelstm_layer(l=l, r=r, positions_force=positions_force,
-                                                                                  target_types=target_types)
-            hom_loss_sum += hom_loss
-            if dt_all is None:
-                dt_all = dt
-            else:
-                dt_all = torch.concat((dt_all, dt), dim=1)
-            if i < max_depth - 2:
-                # We don't need to greedily select the composition in the
-                # last iteration, since it has only one option left.
-                new_h, new_c, new_d, select_mask, selected_h = self.select_composition(
-                    old_state=state, new_state=new_state,
-                    mask=length_mask[:, i + 1:], positions_force=positions_force)
-                # remove positions at this step
-                if positions_force != None:
-                    for k in range(len(positions_force)):
-                        if positions_force[k] != []:
-                            positions_force[k].pop(-1)
-                new_state = (new_h, new_c, new_d)
-                select_masks.append(select_mask)
-                if self.intra_attention:
-                    nodes.append(selected_h)
-            done_mask = length_mask[:, i + 1]
-            state = self.update_state(old_state=state, new_state=new_state,
-                                      done_mask=done_mask)
-            if self.intra_attention and i >= max_depth - 2:
-                nodes.append(state[0])
-        h, c, d = state
-        if self.intra_attention:
-            att_mask = torch.cat([length_mask, length_mask[:, 1:]], dim=1)
-            att_mask = att_mask.float()
-            # nodes: (batch_size, num_tree_nodes, hidden_dim)
-            nodes = torch.cat(nodes, dim=1)
-            att_mask_expand = att_mask.unsqueeze(2).expand_as(nodes)
-            nodes = nodes * att_mask_expand
-            # nodes_mean: (batch_size, hidden_dim, 1)
-            nodes_mean = nodes.mean(1).squeeze(1).unsqueeze(2)
-            # att_weights: (batch_size, num_tree_nodes)
-            att_weights = torch.bmm(nodes, nodes_mean).squeeze(2)
-            att_weights = basic.masked_softmax(
-                logits=att_weights, mask=att_mask)
-            # att_weights_expand: (batch_size, num_tree_nodes, hidden_dim)
-            att_weights_expand = att_weights.unsqueeze(2).expand_as(nodes)
-            # h: (batch_size, 1, 2 * hidden_dim)
-            h = (att_weights_expand * nodes).sum(1)
-        assert h.size(1) == 1 and c.size(1) == 1
-        if not return_select_masks:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, initial_decodings
-        else:
-            return h.squeeze(1), c.squeeze(1), d.squeeze(1), hom_loss_sum, dt_all, initial_decodings, select_masks
+            positions = torch.zeros(B).long()
+            spans = torch.zeros(B).long()
+            for i in range(B):
+                if positions_force[i] == []:
+                    positions[i] = 0 # default to start
+                else:
+                    positions[i] = positions_force[i].pop(-1)
+                if spans_force[i] == []:
+                    spans[i] = 2 # default to binary rules
+                else:
+                    spans[i] = spans_force[i].pop(-1)
+            N = max(spans) # find max span length
+            V = len(self.y_vocab)
+            input_decodings = torch.zeros(B, N, M, V)
+            for i in range(B):
+                input_decodings[i, :spans[i], :, :] = decodings[i, positions[i]:positions[i]+spans[i], :, :]
+            output_decodings, dt = self.treelstm_layer(input_decodings, target_types, spans)
+            _, L, _, _ = decodings.size()
+            new_d = torch.zeros(B, L-1, M, V)
+            for i in range(B):
+                s = spans[i]
+                new_d[i, :L+1-s, :, :] = basic.splice_in_types(decodings[i].view(1, L, M * V), positions[i].unsqueeze(0),
+                                                              output_decodings[i].view(1, M * V), s).view(L+1-s, M, V)
+            decodings = new_d
+
+        return decodings.squeeze(1)
