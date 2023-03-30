@@ -51,6 +51,7 @@ def train(args):
                 return False
         return True
 
+    curriculum_stage = None
     if args.use_curriculum:
         # TK DEBUG -- changed from 0
         curriculum_stage = 2
@@ -352,13 +353,17 @@ def main():
     parser.add_argument('--max_x_seq_len', default = 9)
     parser.add_argument('--max_y_seq_len', default = 49)
     parser.add_argument('--scan_data-frac', default = 1., type=float)
-    parser.add_argument('--use_teacher_forcing', default=True)
+    parser.add_argument('--use_teacher_forcing', default=True, action='store_true')
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
-    parser.add_argument('--use-prim-type-oracle', default=False)
-    parser.add_argument('--print-in-valid', default=False)
-    parser.add_argument('--use-curriculum', default=False)
-    parser.add_argument('--syntactic-supervision', default=False)
-    parser.add_argument('--data-frac', default=1.0)
+    parser.add_argument('--use-prim-type-oracle', default=False, action='store_true')
+    parser.add_argument('--print-in-valid', default=False, action='store_true')
+    parser.add_argument('--use-curriculum', default=False, action='store_true')
+    parser.add_argument('--syntactic-supervision', default=False, action='store_true')
+    parser.add_argument('--data-frac', default=1.0, type=float)
+    parser.add_argument('--dataset', type=str)
+    parser.add_argument('--training-set', type=str)
+    parser.add_argument('--dev-set', type=str)
+    parser.add_argument('--test-set', type=str)
     args = parser.parse_args()
     train(args)
 
