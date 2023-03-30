@@ -183,13 +183,13 @@ class Decoder(nn.Module):
 #         return decoded, logits
 
 
-class SCANModel(nn.Module):
+class CompositionalLearner(nn.Module):
 
     def __init__(self, model, y_vocab, x_vocab, word_dim, hidden_value_dim, hidden_type_dim,
                  decoder_hidden_dim, decoder_num_layers, use_leaf_rnn, bidirectional,
                  intra_attention, use_batchnorm, dropout_prob, max_y_seq_len, use_prim_type_oracle,
                  syntactic_supervision):
-        super(SCANModel, self).__init__()
+        super(CompositionalLearner, self).__init__()
         self.model = model
         self.num_classes = len(y_vocab)
         self.num_words = len(x_vocab)

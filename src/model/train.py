@@ -3,6 +3,7 @@ import logging
 import os
 from random import randint
 
+from lark import Lark
 from tensorboardX import SummaryWriter
 
 import torch
@@ -11,19 +12,26 @@ from torch import nn, optim
 from torch.optim import lr_scheduler, optimizer
 from torch.nn.utils import clip_grad_norm_
 from torch.nn import functional as F
-from src.model.model import SCANModel
+from src.model.model import CompositionalLearner
 from src.model.data import build_vocab, preprocess, MyDataLoader
 from src.model.scan_data import load_SCAN_length, load_SCAN_simple, \
     load_SCAN_add_jump_0, load_SCAN_add_jump_4, parse_scan, \
-    load_SCAN_add_jump_0_no_jump_oversampling, load_SCAN_add_turn_left
+    load_SCAN_add_jump_0_no_jump_oversampling, load_SCAN_add_turn_left, load_SCAN
+from src.model.cogs_data import load_COGS, parse_cogs, cogs_grammar
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 
 
 def train(args):
-    # load train and test scan_data
-    train_data, test_data = load_SCAN_add_jump_0_no_jump_oversampling()
+    dataset = args.dataset
+    training_set = args.training_set
+    dev_set = args.dev_set
+    if dataset == "SCAN":
+        # load train and test scan_data
+        train_data, test_data = load_SCAN(training_set, dev_set)
+    elif dataset == "COGS":
+        train_data, test_data = load_COGS(training_set, dev_set)
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train scan_data set size: {len(train_data)}")
@@ -36,6 +44,7 @@ def train(args):
                            base_tokens=['<PAD>', '<SOS>', '<EOS>', '<UNK>'])
     logging.info(f"X Vocab size: {len(x_vocab)}")
     logging.info(f"Y Vocab size: {len(y_vocab)}")
+
     def select(x, curriculum_stage):
         if curriculum_stage < 4:
             if "and" in x[0] or "after" in x[0]:
@@ -82,24 +91,23 @@ def train(args):
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=args.max_x_seq_len,
                                 max_y_seq_len=args.max_y_seq_len)
-    print('there')
-    model = SCANModel(model=args.model,
-                      y_vocab=y_vocab,
-                      x_vocab=x_vocab,
-                      word_dim=args.word_dim,
-                      hidden_value_dim=args.hidden_dim,
-                      hidden_type_dim=21,
-                      decoder_hidden_dim=args.decoder_hidden_dim,
-                      decoder_num_layers=args.decoder_num_layers,
-                      use_leaf_rnn=args.leaf_rnn,
-                      bidirectional=args.bidirectional,
-                      intra_attention=args.intra_attention,
-                      use_batchnorm=args.batchnorm,
-                      dropout_prob=args.dropout,
-                      max_y_seq_len=args.max_y_seq_len,
-                      use_prim_type_oracle=args.use_prim_type_oracle,
-                      syntactic_supervision=args.syntactic_supervision)
-    print('here')
+
+    model = CompositionalLearner(model=args.model,
+                                 y_vocab=y_vocab,
+                                 x_vocab=x_vocab,
+                                 word_dim=args.word_dim,
+                                 hidden_value_dim=args.hidden_dim,
+                                 hidden_type_dim=27,  # FIXME
+                                 decoder_hidden_dim=args.decoder_hidden_dim,
+                                 decoder_num_layers=args.decoder_num_layers,
+                                 use_leaf_rnn=args.leaf_rnn,
+                                 bidirectional=args.bidirectional,
+                                 intra_attention=args.intra_attention,
+                                 use_batchnorm=args.batchnorm,
+                                 dropout_prob=args.dropout,
+                                 max_y_seq_len=args.max_y_seq_len,
+                                 use_prim_type_oracle=args.use_prim_type_oracle,
+                                 syntactic_supervision=args.syntactic_supervision)
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -137,8 +145,16 @@ def train(args):
             x_tokens = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
             for i in range(len(x_tokens)):
                 x_tokens[i] = " ".join(x_tokens[i])
+            positions = types = spans = None
             for i in range(B):
-                positions, types, spans = parse_scan(x_tokens[i])
+                if dataset == 'SCAN':
+                    positions, types, spans = parse_scan(x_tokens[i])
+                elif dataset == 'COGS':
+                    # create parser
+                    parser = Lark(cogs_grammar, propagate_positions=True)
+                    position, types = parse_cogs(parser, x_tokens[i])
+                else:
+                    assert(False)
                 positions_force.append(positions)
                 types_force.append(types)
                 spans_force.append(spans)
