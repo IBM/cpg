@@ -188,7 +188,7 @@ class CompositionalLearner(nn.Module):
     def __init__(self, model, y_vocab, x_vocab, word_dim, hidden_value_dim, hidden_type_dim,
                  decoder_hidden_dim, decoder_num_layers, use_leaf_rnn, bidirectional,
                  intra_attention, use_batchnorm, dropout_prob, max_y_seq_len, use_prim_type_oracle,
-                 syntactic_supervision):
+                 syntactic_supervision, dataset):
         super(CompositionalLearner, self).__init__()
         self.model = model
         self.num_classes = len(y_vocab)
@@ -237,6 +237,9 @@ class CompositionalLearner(nn.Module):
                                                     for _ in range(hidden_type_dim - 9)]))
         # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
+        # substitution templates
+        self.decoder_sub = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 10 * 40)
+                                                    for _ in range(hidden_type_dim)])
         # model
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
                                            hidden_value_dim=hidden_value_dim,
@@ -248,11 +251,14 @@ class CompositionalLearner(nn.Module):
                                            max_seq_len=self.max_y_seq_len,
                                            decoder_sem=self.decoder_sem,
                                            decoder_init=self.decoder_init,
+                                           decoder_sub=self.decoder_sub,
                                            x_vocab=self.x_vocab,
                                            y_vocab=self.y_vocab,
+                                           dataset=dataset,
                                            is_lstm=model == 'lstm',
                                            scan_token_to_type_map=self.scan_token_to_type_map)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
+        self.dataset = dataset
         self.reset_parameters()
         self.lstm_encoder.reset_parameters()
 

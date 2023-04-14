@@ -30,8 +30,14 @@ def train(args):
     if dataset == "SCAN":
         # load train and test scan_data
         train_data, test_data = load_SCAN(training_set, dev_set)
+        max_x_seq_len = 9
+        max_y_seq_len = 49
+        hidden_type_dim = 21
     elif dataset == "COGS":
         train_data, test_data = load_COGS(training_set, dev_set)
+        max_x_seq_len = 20
+        max_y_seq_len = 200
+        hidden_type_dim = 89
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train scan_data set size: {len(train_data)}")
@@ -42,23 +48,12 @@ def train(args):
                            base_tokens=['<PAD>', '<UNK>'])
     y_vocab = build_vocab([y for _, y in train_data],
                            base_tokens=['<PAD>', '<SOS>', '<EOS>', '<UNK>'])
+    if dataset == "COGS":
+        y_vocab.add_token("y")
+        for i in range(20):
+            y_vocab.add_token(str(i))
     logging.info(f"X Vocab size: {len(x_vocab)}")
     logging.info(f"Y Vocab size: {len(y_vocab)}")
-
-    def select(x, curriculum_stage):
-        if curriculum_stage < 4:
-            if "and" in x[0] or "after" in x[0]:
-                return False
-        if curriculum_stage < 3:
-            if "twice" in x[0] or "thrice" in x[0]:
-                return False
-        if curriculum_stage < 2:
-            if "opposite" in x[0] or "around" in x[0]:
-                return False
-        if curriculum_stage < 1:
-            if "turn" in x[0]:
-                return False
-        return True
 
     curriculum_stage = None
     if args.use_curriculum:
@@ -67,10 +62,10 @@ def train(args):
         # filter_fn = lambda x: select(x, curriculum_stage)
         filter_fn = lambda x: len(x[0]) == curriculum_stage
         train_data_curriculum = list(filter(filter_fn, train_data))
-        print(train_data_curriculum)
+        #print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
         valid_data_curriculum = list(filter(filter_fn, test_data))
-        print(valid_data_curriculum)
+        #print(valid_data_curriculum)
         preprocessed_valid_data = preprocess(valid_data_curriculum, x_vocab, y_vocab)
 
     else:
@@ -81,23 +76,23 @@ def train(args):
                                 shuffle=True,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
-                                max_x_seq_len=args.max_x_seq_len,
-                                max_y_seq_len=args.max_y_seq_len)
+                                max_x_seq_len=max_x_seq_len,
+                                max_y_seq_len=max_y_seq_len)
 
     valid_loader = MyDataLoader(preprocessed_valid_data,
                                 batch_size=args.batch_size,
                                 shuffle=True,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
-                                max_x_seq_len=args.max_x_seq_len,
-                                max_y_seq_len=args.max_y_seq_len)
+                                max_x_seq_len=max_x_seq_len,
+                                max_y_seq_len=max_y_seq_len)
 
     model = CompositionalLearner(model=args.model,
                                  y_vocab=y_vocab,
                                  x_vocab=x_vocab,
                                  word_dim=args.word_dim,
                                  hidden_value_dim=args.hidden_dim,
-                                 hidden_type_dim=27,  # FIXME
+                                 hidden_type_dim=hidden_type_dim,
                                  decoder_hidden_dim=args.decoder_hidden_dim,
                                  decoder_num_layers=args.decoder_num_layers,
                                  use_leaf_rnn=args.leaf_rnn,
@@ -105,9 +100,10 @@ def train(args):
                                  intra_attention=args.intra_attention,
                                  use_batchnorm=args.batchnorm,
                                  dropout_prob=args.dropout,
-                                 max_y_seq_len=args.max_y_seq_len,
+                                 max_y_seq_len=max_y_seq_len,
                                  use_prim_type_oracle=args.use_prim_type_oracle,
-                                 syntactic_supervision=args.syntactic_supervision)
+                                 syntactic_supervision=args.syntactic_supervision,
+                                 dataset=dataset)
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -152,9 +148,13 @@ def train(args):
                 elif dataset == 'COGS':
                     # create parser
                     parser = Lark(cogs_grammar, propagate_positions=True)
-                    position, types = parse_cogs(parser, x_tokens[i])
+                    positions, types, spans = parse_cogs(parser, x_tokens[i])
                 else:
                     assert(False)
+                #print('x tokens:', x_tokens[i])
+                #print('positions:', positions)
+                #print('types:', types)
+                #print('spans:', spans)
                 positions_force.append(positions)
                 types_force.append(types)
                 spans_force.append(spans)
@@ -175,9 +175,9 @@ def train(args):
             decoded = y_vocab.decode_batch(decoding_idx.numpy(), decoding_idx != y_vocab.token_to_idx('<PAD>'))
             print("--------------------------------")
             for i in range(B):
-                print("input: ", ", ".join(input[i]), "\n")
-                print("expected: ", ", ".join(expected[i]), "\n")
-                print("decoded: ", ", ".join(decoded[i]))
+                print("input: ", " ".join(input[i]), "\n")
+                print("expected: ", " ".join(expected[i]), "\n")
+                print("decoded: ", " ".join(decoded[i]))
                 print("--------------------------------")
         _, N, V = decoding.size()
         _, M = batch_y.size()
@@ -261,8 +261,8 @@ def train(args):
                                         shuffle=False,
                                         x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                         y_pad_idx=y_vocab.token_to_idx('<PAD>'),
-                                        max_x_seq_len=args.max_x_seq_len,
-                                        max_y_seq_len=args.max_y_seq_len)
+                                        max_x_seq_len=max_x_seq_len,
+                                        max_y_seq_len=max_y_seq_len)
 
             test_data_curriculum = list(filter(filter_fn, test_data))
             print(test_data_curriculum)
@@ -272,8 +272,8 @@ def train(args):
                                         shuffle=False,
                                         x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                         y_pad_idx=y_vocab.token_to_idx('<PAD>'),
-                                        max_x_seq_len=args.max_x_seq_len,
-                                        max_y_seq_len=args.max_y_seq_len)
+                                        max_x_seq_len=max_x_seq_len,
+                                        max_y_seq_len=max_y_seq_len)
             train_accuracy_stage_total = 0.0
             train_accuracy_stage = 0.0
             iter_count_stage = 0
@@ -366,8 +366,6 @@ def main():
     parser.add_argument('--optimizer', default='adam')
     parser.add_argument('--fine-grained', default=False, action='store_true')
     parser.add_argument('--halve-lr-every', default=2, type=int)
-    parser.add_argument('--max_x_seq_len', default = 9)
-    parser.add_argument('--max_y_seq_len', default = 49)
     parser.add_argument('--scan_data-frac', default = 1., type=float)
     parser.add_argument('--use_teacher_forcing', default=True, action='store_true')
     parser.add_argument('--model', default='tree-lstm', choices={'tree-lstm', 'lstm'})
