@@ -148,22 +148,35 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
     
     def apply_substitution_template(self, new_d, variables, temp_sub):
         B, M, V = new_d.size()
-        idx = 0
         y_vector = int_to_one_hot(self.y_vocab.token_to_idx('y'), V)
+        y_var = torch.zeros(3, V)
+        y_var[0] = y_vector
         for i in range(B):
+            # get choices
+            choices = [y_var.flatten()]
+            for n in range(40):
+                if torch.equal(variables[i, n], torch.zeros(3, V)):
+                    choices.append(y_var.flatten())
+                else:
+                    choices.append(variables[i, n].flatten())
+            choices = torch.stack(choices, dim=0)
+            # get variable list ordered according to the substitution template
+            var_sub = torch.zeros(10, 3, V)
+            for k in range(10):
+                var_sub[k] = torch.mm(temp_sub[i, k].unsqueeze(0), choices).view(3, V)
+            # subsitute into slots
+            idx = 0
             for j in range(M):
                 if torch.equal(new_d[i, j], y_vector):
-                    # get variable
-                    var = variables[i, temp_sub[i, idx].item()]
-                    # return if we reach the end of variable list
-                    if torch.equal(var, torch.zeros(3, V)):
-                        return new_d
                     # determine if variable is x_i
-                    if torch.equal(var[0], int_to_one_hot(self.y_vocab.token_to_idx('x'), V)):
+                    if torch.equal(var_sub[idx, 0], int_to_one_hot(self.y_vocab.token_to_idx('x'), V)):
                         new_d[i, j+3:] = new_d[i, j+1:M-2].clone()
-                        new_d[i, j:j+3] = var
+                        new_d[i, j:j+3] = var_sub[idx]
                     else:
-                        new_d[i, j] = var[0]
+                        new_d[i, j] = var_sub[idx, 0]
+                    # break if we reach the end of variable list
+                    if idx == 9:
+                        break
                     idx += 1
         return new_d
 
@@ -224,12 +237,12 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     while idx < 40 and not torch.equal(variables[i, j, idx, :], zero_var):
                         new_v[i, idx] = variables[i, j, idx]
                         idx += 1
-            temp_sub = torch.zeros(B, 10, 40)
+            temp_sub = torch.zeros(B, 10, 41)
             for i in range(B):
                 temp_sub[i] = torch.nn.functional.gumbel_softmax(
-                        self.decoder_sub[target_types[i]](type_embedding[i]).view(10, 40).log_softmax(-1),
+                        self.decoder_sub[target_types[i]](type_embedding[i]).view(10, 41).log_softmax(-1),
                         tau=self.gumbel_temperature, hard=True)
-            new_d = self.apply_substitution_template(new_d, new_v, temp_sub.argmax(-1))
+            new_d = self.apply_substitution_template(new_d, new_v, temp_sub)
         return new_d, new_v
 
 
@@ -435,6 +448,4 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                               output_variables[i].view(1, 40 * 3 * V), s).view(L+1-s, 40, 3, V)
             decodings = new_d
             variables = new_v
-
-        decodings.requires_grad = True
         return decodings[:, 0, :, :].squeeze(1)

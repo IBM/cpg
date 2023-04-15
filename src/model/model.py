@@ -238,7 +238,7 @@ class CompositionalLearner(nn.Module):
         # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # substitution templates
-        self.decoder_sub = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 10 * 40)
+        self.decoder_sub = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 10 * 41)
                                                     for _ in range(hidden_type_dim)])
         # model
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
