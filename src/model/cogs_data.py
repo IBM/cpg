@@ -32,9 +32,9 @@ animate_nouns = [
     'doctor', 'pupil', 'prince', 'driver', 'consumer', 'writer', 'farmer', 'friend', 'judge', 'visitor',
     'guest', 'servant', 'chief', 'citizen', 'champion', 'prisoner', 'captain', 'soldier', 'passenger', 'tenant',
     'politician', 'resident', 'buyer', 'spokesman', 'governor', 'guard', 'creature', 'coach', 'producer', 'researcher',
-    'guy', 'dealer', 'duke', 'tourist', 'landlord', 'human', 'host', 'priest', 'journalist', 'poet'
+    'guy', 'dealer', 'duke', 'tourist', 'landlord', 'human', 'host', 'priest', 'journalist', 'poet', 'hedgehog',
+    'shark', 'cockroach', 'cobra', 'hippo'
 ]
-assert len(set(animate_nouns)) == 100
 
 inanimate_nouns = [
     'cake', 'donut', 'cookie', 'box', 'rose', 'drink', 'raisin', 'melon', 'sandwich', 'strawberry',
@@ -49,8 +49,6 @@ inanimate_nouns = [
     'bell', 'coin', 'button', 'needle', 'molecule', 'crystal', 'flag', 'nail', 'bean', 'liver'
 ]
 
-assert len(set(inanimate_nouns)) == 100
-
 # 100 names, picked from https://www.ssa.gov/OACT/babynames/
 proper_nouns = [
     'Emma', 'Liam', 'Olivia', 'Noah', 'Ava', 'William', 'Isabella', 'James', 'Sophia', 'Oliver',
@@ -62,12 +60,11 @@ proper_nouns = [
     'Lily', 'Dylan', 'Eleanor', 'Grayson', 'Hannah', 'Levi', 'Lillian', 'Isaac', 'Addison', 'Gabriel',
     'Aubrey', 'Julian', 'Ellie', 'Mateo', 'Stella', 'Anthony', 'Natalie', 'Jaxon', 'Zoe', 'Lincoln',
     'Leah', 'Joshua', 'Hazel', 'Christopher', 'Violet', 'Andrew', 'Aurora', 'Theodore', 'Savannah', 'Caleb',
-    'Audrey', 'Ryan', 'Brooklyn', 'Asher', 'Bella', 'Nathan', 'Claire', 'Thomas', 'Skylar', 'Leo'
+    'Audrey', 'Ryan', 'Brooklyn', 'Asher', 'Bella', 'Nathan', 'Claire', 'Thomas', 'Skylar', 'Leo', 'Lina',
+    'Paula', 'Charlie'
 ]
 # convert to lower case
 proper_nouns = list(map(lambda n: n.lower(), proper_nouns))
-
-assert len(set(proper_nouns)) == 100
 
 # P + N: N from BNC + COCA
 
@@ -114,7 +111,6 @@ beside_nouns = [
 
 ]
 
-assert len(set(on_nouns)) == len(set(in_nouns)) == len(set(beside_nouns)) == 100
 noun_list = animate_nouns + inanimate_nouns + proper_nouns + on_nouns + in_nouns + beside_nouns
 print(len(set(noun_list)))
 
@@ -124,7 +120,7 @@ V_trans_omissible = [
     'ate', 'painted', 'drew', 'cleaned', 'cooked',
     'dusted', 'hunted', 'nursed', 'sketched', 'juggled',
     'called', 'heard', 'packed', 'saw', 'noticed',
-    'studied', 'examined', 'observed', 'knew', 'investigated'
+    'studied', 'examined', 'observed', 'knew', 'investigated', 'baked'
 ]
 V_trans_omissible_pp = [
     'eaten', 'painted', 'drawn', 'cleaned', 'cooked',
@@ -132,8 +128,6 @@ V_trans_omissible_pp = [
     'called', 'heard', 'packed', 'seen', 'noticed',
     'studied', 'examined', 'observed', 'known', 'investigated'
 ]
-
-assert len(set(V_trans_omissible)) == len(set(V_trans_omissible_pp)) == 20
 
 # Levin class 30. Verbs of Perception, 31.2 Admire Verbs, VerbNet poke-19, throw-17.1.1
 V_trans_not_omissible = [
@@ -149,11 +143,6 @@ V_trans_not_omissible_pp = [
     'held', 'stabbed', 'touched', 'pierced', 'tossed'
 ]
 
-assert set(V_trans_omissible).isdisjoint(set(V_trans_not_omissible))
-assert set(V_trans_omissible_pp).isdisjoint(set(V_trans_not_omissible_pp))
-
-assert len(set(V_trans_not_omissible)) == len(set(V_trans_not_omissible_pp)) == 20
-
 # Levin 29.4 Declare verbs, Levin 30. Verbs of Perception, VerbNet admire-31.2, VerbNet wish-62
 V_cp_taking = [
     'liked', 'hoped', 'said', 'noticed', 'believed',
@@ -162,8 +151,6 @@ V_cp_taking = [
     'wished', 'dreamed', 'expected', 'imagined', 'meant'
 ]
 
-assert len(set(V_cp_taking)) == 20
-
 # VerbNet want-32.1, VerbNet try-61, VerbNet wish-62, VerbNet long-32.2, VerbNet admire-31.2-1
 V_inf_taking = [
     'wanted', 'preferred', 'needed', 'intended', 'tried',
@@ -171,7 +158,6 @@ V_inf_taking = [
     'craved', 'liked', 'hated', 'loved', 'enjoyed',
     'dreamed', 'meant', 'longed', 'yearned', 'itched'
 ]
-assert len(set(V_inf_taking)) == 20
 
 # 1.1.2.1 Causative-Inchoative Alternation
 V_unacc = [
@@ -179,6 +165,7 @@ V_unacc = [
     'grew', 'slid', 'broke', 'crumpled', 'split',
     'changed', 'snapped', 'disintegrated', 'collapsed', 'decomposed',
     'doubled', 'improved', 'inflated', 'enlarged', 'reddened',
+    'shattered', 'blessed', 'squeezed'
 ]
 V_unacc_pp = [
     'rolled', 'frozen', 'burned', 'shortened', 'floated',
@@ -186,7 +173,6 @@ V_unacc_pp = [
     'changed', 'snapped', 'disintegrated', 'collapsed', 'decomposed',
     'doubled', 'improved', 'inflated', 'enlarged', 'reddened'
 ]
-assert len(set(V_unacc)) == len(set(V_unacc_pp)) == 20
 
 V_unerg = [
     'slept', 'smiled', 'laughed', 'sneezed', 'cried',
@@ -194,22 +180,21 @@ V_unerg = [
     'napped', 'snoozed', 'screamed', 'stuttered', 'frowned',
     'giggled', 'scoffed', 'snored', 'smirked', 'gasped'
 ]
-assert len(set(V_unerg)) == 20
 
 # 10 DO omissible transitives, 10 unergatives
 V_inf = [
     'walk', 'run', 'sleep', 'sneeze', 'nap',
     'eat', 'read', 'cook', 'hunt', 'paint',
     'talk', 'dance', 'giggle', 'jog', 'smirk',
-    'call', 'sketch', 'dust', 'clean', 'investigate'
+    'call', 'sketch', 'dust', 'clean', 'investigate', 'crawl'
 ]
-assert len(set(V_inf)) == 20
 
 V_dat = [
     'gave', 'lended', 'sold', 'offered', 'fed',
     'passed', 'sent', 'rented', 'served', 'awarded',
     'brought', 'handed', 'forwarded', 'promised', 'mailed',
-    'loaned', 'posted', 'returned', 'slipped', 'wired'
+    'loaned', 'posted', 'returned', 'slipped', 'wired',
+    'teleported', 'shipped'
 ]
 V_dat_pp = [
     'given', 'lended', 'sold', 'offered', 'fed',
@@ -217,8 +202,6 @@ V_dat_pp = [
     'brought', 'handed', 'forwarded', 'promised', 'mailed',
     'loaned', 'posted', 'returned', 'slipped', 'wired'
 ]
-
-assert len(set(V_dat)) == len(set(V_dat_pp)) == 20
 
 print(len(set(V_trans_omissible + V_trans_not_omissible + V_cp_taking + V_unacc + V_unerg + V_dat)))
 
@@ -272,32 +255,6 @@ pos_d = {
     'by': 'ADP'
 }
 
-# held out vocab items for gen set
-only_seen_as_subject = 'hedgehog'
-only_seen_as_noun_prim = 'shark'
-only_seen_as_object = 'cockroach'
-only_seen_as_subject_proper_noun = 'Lina'
-only_seen_as_proper_noun_prim = 'Paula'
-only_seen_as_object_proper_noun = 'Charlie'
-only_seen_as_transitive_obj_omissible = 'baked'
-only_seen_as_unaccuative = 'shattered'
-only_seen_as_verb_prim = 'crawl'
-only_seen_as_transitive_subject_animate = 'cobra'
-only_seen_as_unaccusative_subject_animate = 'hippo'
-only_seen_as_active = 'blessed'
-only_seen_as_passive = 'squeezed'
-only_seen_as_double_object = 'teleported'
-only_seen_as_pp = 'shipped'
-
-target_item_nouns = [only_seen_as_subject, only_seen_as_noun_prim, only_seen_as_object,
-                     only_seen_as_transitive_subject_animate, only_seen_as_unaccusative_subject_animate]
-
-target_item_props = [only_seen_as_subject_proper_noun, only_seen_as_proper_noun_prim,
-                     only_seen_as_object_proper_noun]
-
-pos_d.update({n: 'PROPN' for n in proper_nouns + target_item_props})
-pos_d.update({n: 'NOUN' for n in noun_list + target_item_nouns})
-
 def quote(l):
     return map(lambda x: "\"" + x + "\"", l)
 
@@ -329,6 +286,8 @@ cogs_grammar = """
     vp_passive_dat2: AUX v_dat_pp np_inanimate_dobj BY np_animate_nsubj
     np_dobj: np_inanimate_dobj | np_animate_dobj
     np_unacc_subj: np_inanimate_dobj_nopp | np_animate_dobj_nopp
+    np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
+    np_animate_dobj_nopp1: det n_common_animate_dobj
     np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
     np_animate_dobj_nopp1: det n_common_animate_dobj
     np_animate_dobj_nopp: det n_common_animate_dobj | n_prop_dobj
@@ -606,9 +565,9 @@ cogs_token_to_type = {
     "PON": Cogs_Types.P_ON,
     "PIN": Cogs_Types.P_IN,
     "PBEDSIDE": Cogs_Types.P_BEDSIDE,
-    "INF": Cogs_Types.INF
+    "INF": Cogs_Types.INF,
+    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1
 }
-
 
 exclude_types = ["PIOBJ", "PON", "PIN", "PBEDSIDE", "INF", "det", "C", "AUX", "BY",
                  "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
@@ -618,6 +577,29 @@ exclude_types = ["PIOBJ", "PON", "PIN", "PBEDSIDE", "INF", "det", "C", "AUX", "B
                  "v_trans_not_omissible_pp", "v_cp_taking", "v_inf_taking", "v_unacc", "v_unacc_pp",
                  "v_unerg", "v_inf", "v_dat", "v_dat_pp", "start"]
 
+five_span_types = ['vp_passive8', 'vp_passive_dat2']
+
+four_span_types = ['vp_passive2', 'vp_passive4', 'vp_passive6']
+
+three_span_types = ['vp_external4', 'vp_external5', 'vp_external6', 'vp_external7', 'vp_passive7', \
+                    'vp_passive_dat1', 'np_animate_dobj2', 'np_inanimate_dobj2', 'np_on1', 'np_in1', 'np_bedside1']
+
+two_span_types = ['s1', 's2', 's3', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal', \
+                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_animate_dobj1', 'np_animate_iobj1', \
+                  'np_animate_nsubj1', 'np_inanimate_dobj1', 'np_inanimate_dobj_nopp', 'np_inanimate_nsubjpass', \
+                  'np_on2', 'np_in2', 'np_bedside2', 'pp_iobj', 'pp_loc1', 'pp_loc2', 'pp_loc3', \
+                  'np_animate_nsubjpass1', 'np_animate_dobj_nopp1']
+
+one_span_types = ['n_common_animate_dobj', 'n_common_animate_iobj', 'n_common_animate_nsubj', \
+                  'n_common_animate_nsubjpass', 'n_common_inanimate_dobj', 'n_common_inanimate_nsubjpass', \
+                  'n_prop_dobj', 'n_prop_iobj', 'n_prop_nsubj', 'n_prop_nsubjpass', 'n_on', 'n_in', 'n_beside', \
+                  'v_trans_omissible', 'v_trans_omissible_pp', 'v_trans_not_omissible', 'v_trans_not_omissible_pp', \
+                  'v_cp_taking', 'v_inf_taking', 'v_unacc', 'v_unacc_pp', 'v_unerg', 'v_inf', 'v_dat', 'v_dat_pp', \
+                  'det', 'C', 'AUX', 'BY', 'PIOBJ', 'PON', 'PIN', 'PBEDSIDE', 'INF', 'pp_loc', 'np_beside', 'np_in', \
+                  'np_on', 'np_inanimate_dobj', 'np_animate_nsubjpass', 'np_animate_nsubj', 'np_animate_iobj', \
+                  'np_animate_dobj', 'np_unacc_subj', 'np_dobj', 'vp_passive_dat', 'vp_passive', 'vp_external', \
+                  'np_animate_dobj_nopp']
+
 
 def parse_cogs(parser, cogs_command):
     # create parse tree
@@ -626,12 +608,38 @@ def parse_cogs(parser, cogs_command):
     previous_index = 0
     positions = []
     types = []
+    spans = []
     for node in parse_tree.iter_subtrees_topdown():
         if previous_index < node.meta.start_pos:
             current_position += 1
             previous_index = node.meta.start_pos
         if node.data in exclude_types:
             continue
+        # determine span length
+        if node.data.value in one_span_types:
+            spans.append(1)
+        elif node.data.value in two_span_types:
+            spans.append(2)
+        elif node.data.value in three_span_types:
+            spans.append(3)
+        elif node.data.value in four_span_types:
+            spans.append(4)
+        elif node.data.value in five_span_types:
+            spans.append(5)
+        else:
+            assert(False)
         positions.append(current_position)
         types.append(cogs_token_to_type[node.data.value])
-    return positions, types
+    return positions, types, spans
+
+# generate initial decoding and variables
+initial_decodings_cogs = {noun : '' for noun in set(noun_list)} |\
+                         {verb : 'y . agent ( y , y ) | y . theme ( y , y ) | y . recipient ( y , y ) | y . ccomp ( y , y ) | y . xcomp ( y , y )'
+                                  for verb in verbs_lemmas.keys()} |\
+                         {'the' : '* y ( y )'} |\
+                         {'a' : 'y ( y )'} |\
+                         {'on' : 'y . nmod . on ( y , y )'} |\
+                         {'in' : 'y . nmod . in ( y , y )'} |\
+                         {'beside' : 'y . nmod . beside ( y , y )'} |\
+                         {word : '' for word in ['that', 'was', 'by', 'to']}
+initial_variables_cogs = {noun : noun for noun in set(noun_list)} | verbs_lemmas

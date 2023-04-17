@@ -130,3 +130,8 @@ class MyDataLoader:
         Y = torch.concat([torch.nn.functional.one_hot(i[1], num_classes=max_y_vocab).float() for i in self.batches],
                          dim=0)
         return X, Y
+
+def int_to_one_hot(x, size):
+    result = torch.tensor([0 for _ in range(size)])
+    result[x] = 1
+    return result

@@ -8,6 +8,9 @@ from torch.nn import functional as F
 from src.model import basic
 import numpy as np
 from src.model.scan_data import ScanTypes
+from src.model.scan_data import initial_decodings_scan
+from src.model.cogs_data import initial_decodings_cogs, initial_variables_cogs
+from src.model.data import int_to_one_hot
 
 
 class FeedForward(nn.Module):
@@ -57,7 +60,7 @@ class TypePredictor(nn.Module):
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
     def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor, binary_type_predictor,
-                 max_seq_len, decoder_sem, decoder_init, gumbel_temperature):
+                 max_seq_len, decoder_sem, decoder_init, decoder_sub, y_vocab, gumbel_temperature, dataset):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
@@ -69,17 +72,26 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
         self.decoder_init = decoder_init
-        self.vocab_size = len(self.decoder_init.vocab)
+        self.decoder_sub = decoder_sub
+        self.y_vocab = y_vocab
+        self.vocab_size = len(y_vocab)
         self.encoder = nn.GRU(self.vocab_size, self.hidden_value_dim, batch_first=True)
         self.gumbel_temperature = gumbel_temperature
         self.type_embedding = nn.Embedding(num_embeddings=self.hidden_type_dim,
                                            embedding_dim=self.hidden_value_dim)
         self.type_embedding.weight.requires_grad = False
-        self.length_predictor = nn.Linear(self.hidden_value_dim, 4) # TK FIXME remove hardcoding template length
         self.templates = nn.ParameterDict()
+        self.dataset = dataset
         self.reset_parameters()
 
     def reset_gumbel_temp(self, new_temp):
+        self.gumbel_temperature = new_temp
+
+    def reduce_gumbel_temp(self, factor, iter, verbose=False):
+        # TK DEBUG
+        new_temp = np.maximum(self.gumbel_temperature * np.exp(-factor * iter), 0.5)
+        if verbose:
+            print(f'Gumbel temp lowered from {self.gumbel_temperature:g} to {new_temp:g}')
         self.gumbel_temperature = new_temp
 
     def reset_parameters(self):
@@ -133,56 +145,112 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                 idx = idx + output_len
 
         return result
+    
+    def apply_substitution_template(self, new_d, variables, temp_sub):
+        B, M, V = new_d.size()
+        y_vector = int_to_one_hot(self.y_vocab.token_to_idx('y'), V)
+        y_var = torch.zeros(3, V)
+        y_var[0] = y_vector
+        for i in range(B):
+            # get choices
+            choices = [y_var.flatten()]
+            for n in range(40):
+                if torch.equal(variables[i, n], torch.zeros(3, V)):
+                    choices.append(y_var.flatten())
+                else:
+                    choices.append(variables[i, n].flatten())
+            choices = torch.stack(choices, dim=0)
+            # get variable list ordered according to the substitution template
+            var_sub = torch.zeros(10, 3, V)
+            for k in range(10):
+                var_sub[k] = torch.mm(temp_sub[i, k].unsqueeze(0), choices).view(3, V)
+            # subsitute into slots
+            idx = 0
+            for j in range(M):
+                if torch.equal(new_d[i, j], y_vector):
+                    # determine if variable is x_i
+                    if torch.equal(var_sub[idx, 0], int_to_one_hot(self.y_vocab.token_to_idx('x'), V)):
+                        new_d[i, j+3:] = new_d[i, j+1:M-2].clone()
+                        new_d[i, j:j+3] = var_sub[idx]
+                    else:
+                        new_d[i, j] = var_sub[idx, 0]
+                    # break if we reach the end of variable list
+                    if idx == 9:
+                        break
+                    idx += 1
+        return new_d
 
-    def forward(self, decodings, target_types, spans):
+    def forward(self, decodings, variables, target_types, spans):
         """
         Args:
             decodings: input decodings of size B x N x M x V
+            variables: input variables of size B x N x 30 x 3 x V
         Returns:
             new_d: output decoding of size B x M x V
             dt_sample: templates of size B x K x 3
         """
 
         B, N, M, V = decodings.size()
-
         type_embedding = self.type_embedding(target_types)
-        # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
-        K = 8
-        dt_sample = torch.zeros(B, K, N+1)
-        # hard code start template
-        start_template = torch.full((K, 1), 0).squeeze()  # 0 = PAD
-        start_template[0] = 1
-        start_template = F.one_hot(start_template, N+1)
 
-        for i in range(B):
-            s = spans[i]
+        if self.dataset == 'SCAN':
+            # TK FIXME -- put these in the args somewhere K=8, template_vocab_size=3
+            K = 8
+            dt_sample = torch.zeros(B, K, N+1)
             # hard code start template
-            if target_types[i] == 20:
-                dt_sample[i] = start_template
-            elif str(target_types[i].item()) in self.templates.keys():
-                dt_sample[i, :, :s+1] = self.templates[str(target_types[i].item())]
-            else:
-                dt_sample[i, :, :s+1] = torch.nn.functional.gumbel_softmax(
-                    self.decoder_sem[s-2][target_types[i]-9](type_embedding[i]).view(K, s+1).log_softmax(-1),
-                    tau=self.gumbel_temperature, hard=True)
+            start_template = torch.full((K, 1), 0).squeeze()  # 0 = PAD
+            start_template[0] = 1
+            start_template = F.one_hot(start_template, N+1)
+            for i in range(B):
+                s = spans[i]
+                # hard code start template
+                if target_types[i] == 20:
+                    dt_sample[i] = start_template
+                elif str(target_types[i].item()) in self.templates.keys():
+                    dt_sample[i, :, :s+1] = self.templates[str(target_types[i].item())]
+                else:
+                    dt_sample[i, :, :s+1] = torch.nn.functional.gumbel_softmax(
+                        self.decoder_sem[s-2][target_types[i]-9](type_embedding[i]).view(K, s+1).log_softmax(-1),
+                        tau=self.gumbel_temperature, hard=True)
+            new_d = self.apply_decoder_template(dt_sample, decodings, spans)
+            new_v = torch.zeros(B, 40, 3, V)
 
-        new_d = self.apply_decoder_template(dt_sample, decodings, spans)
-
-        return new_d, dt_sample
-
-    def reduce_gumbel_temp(self, factor, iter, verbose=False):
-        # TK DEBUG
-        new_temp = np.maximum(self.gumbel_temperature * np.exp(-factor * iter), 0.5)
-        if verbose:
-            print(f'Gumbel temp lowered from {self.gumbel_temperature:g} to {new_temp:g}')
-        self.gumbel_temperature = new_temp
+        elif self.dataset == 'COGS':
+            new_d = torch.zeros(B, M, V)
+            new_v = torch.zeros(B, 40, 3, V)
+            zero_vector = torch.full((V, 1), 0.).squeeze()
+            zero_var = torch.zeros(3, V)
+            pad_vector = torch.full((V, 1), 0.).squeeze()
+            pad_vector[0] = 1.0
+            # concatenate input decodings
+            for i in range(B):
+                idx = 0
+                for j in range(N):
+                    while idx < M and not torch.equal(decodings[i, j, idx, :], pad_vector) and \
+                          not torch.equal(decodings[i, j, idx, :], zero_vector):
+                        new_d[i, idx, :] = decodings[i, j, idx, :]
+                        idx += 1
+            # concatenate input variables
+            for i in range(B):
+                idx = 0
+                for j in range(N):
+                    while idx < 40 and not torch.equal(variables[i, j, idx, :], zero_var):
+                        new_v[i, idx] = variables[i, j, idx]
+                        idx += 1
+            temp_sub = torch.zeros(B, 10, 41)
+            for i in range(B):
+                temp_sub[i] = torch.nn.functional.gumbel_softmax(
+                        self.decoder_sub[target_types[i]](type_embedding[i]).view(10, 41).log_softmax(-1),
+                        tau=self.gumbel_temperature, hard=True)
+            new_d = self.apply_substitution_template(new_d, new_v, temp_sub)
+        return new_d, new_v
 
 
 class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
-                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_init, x_vocab,
-                 y_vocab, is_lstm=False, scan_token_to_type_map=None, input_tokens=None, positions_force=None,
+                 gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_init, decoder_sub, x_vocab,
+                 y_vocab, dataset, is_lstm=False, scan_token_to_type_map=None, input_tokens=None, positions_force=None,
                  types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
@@ -198,11 +266,13 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.max_seq_len = max_seq_len
         self.decoder_sem = decoder_sem
         self.decoder_init = decoder_init
+        self.decoder_sub = decoder_sub
         self.x_vocab = x_vocab
         self.y_vocab = y_vocab
         self.positions_force = positions_force
         self.types_force = types_force
         self.initial_decoder = torch.nn.Linear(hidden_value_dim, len(self.decoder_init.vocab))
+        self.dataset = dataset
 
         assert not (self.bidirectional and not self.use_leaf_rnn)
 
@@ -225,7 +295,10 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                            self.max_seq_len,
                                                            self.decoder_sem,
                                                            self.decoder_init,
-                                                           self.gumbel_temperature)
+                                                           self.decoder_sub,
+                                                           self.y_vocab,
+                                                           self.gumbel_temperature,
+                                                           self.dataset)
             self.comp_query = nn.Parameter(torch.FloatTensor(2 * (hidden_value_dim + hidden_type_dim)))
         else:
             self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim,
@@ -234,7 +307,10 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                            self.max_seq_len,
                                                            self.decoder_sem,
                                                            self.decoder_init,
-                                                           self.gumbel_temperature)
+                                                           self.decoder_sub,
+                                                           self.y_vocab,
+                                                           self.gumbel_temperature,
+                                                           self.dataset)
             self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
         self.reset_parameters()
@@ -273,11 +349,47 @@ class TypedBinaryTreeLSTM(nn.Module):
         self.treelstm_layer.reset_parameters()
         init.normal_(self.comp_query.data, mean=0, std=0.01)
 
-    @staticmethod
-    def int_to_one_hot(x, size):
-        result = torch.tensor([0 for _ in range(size)])
-        result[x] = 1
-        return result
+    def get_initial_scan(self, initial_decodings, input, input_tokens):
+        B, L, M, target_vocab_size = initial_decodings.size()
+        initial_decodings[:, :, 0, :] = self.initial_decoder(input).softmax(-1)
+        pad_decoding = torch.tensor([0 for _ in range(target_vocab_size)])
+        pad_decoding[0] = 1
+        for i in range(B):
+            for j in range(L):
+                input_token = self.x_vocab.idx_to_token(input_tokens[i, j].item())
+                if input_token in initial_decodings_scan.keys():
+                    target_token = initial_decodings_scan[input_token]
+                    initial_decodings[i, j, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_token), target_vocab_size)
+                else:
+                    initial_decodings[i, j, 0, :] = pad_decoding
+        return initial_decodings
+    
+    def get_initial_cogs(self, initial_decodings, initial_variables, input, input_tokens):
+        B, L, M, V = initial_decodings.size()
+        #initial_decodings[:, :, 0, :] = self.initial_decoder(input).softmax(-1)
+        pad_decoding = torch.tensor([0 for _ in range(V)])
+        pad_decoding[0] = 1
+        for i in range(B):
+            for j in range(L):
+                input_token = self.x_vocab.idx_to_token(input_tokens[i, j].item())
+                if input_token == '<PAD>':
+                    target_tokens = ''
+                else:
+                    target_tokens = initial_decodings_cogs[input_token]
+                    # get initial variables
+                    initial_variables[i, j, 0, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx('x'), V)
+                    initial_variables[i, j, 0, 1, :] = int_to_one_hot(self.y_vocab.token_to_idx('_'), V)
+                    initial_variables[i, j, 0, 2, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
+                    if input_token in initial_variables_cogs.keys():
+                        target_variable = initial_variables_cogs[input_token]
+                        initial_variables[i, j, 1, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_variable), V)
+                if target_tokens == '':
+                    initial_decodings[i, j, 0, :] = pad_decoding
+                else:
+                    target_tokens = [token for token in target_tokens.split(' ') if token != '|']
+                    for k in range(len(target_tokens)):
+                        initial_decodings[i, j, k, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_tokens[k]), V)
+        return initial_decodings, initial_variables
 
     def forward(self, input, length, input_tokens, positions_force=None, types_force=None, spans_force=None):
         max_depth = input.size(1)
@@ -287,29 +399,15 @@ class TypedBinaryTreeLSTM(nn.Module):
         B, L, _ = input.size()
         if self.scan_token_to_type_map is not None:
             target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
-        # TK DEBUG FIXME: get the 49 from somewhere
-        M = 49
-        initial_decodings = torch.zeros(B, L, M, target_vocab_size)
-        initial_decodings[:, :, 0, :] = self.initial_decoder(input).softmax(-1)
+        M = self.max_seq_len
+        initial_decodings = torch.zeros(B, L, self.max_seq_len, target_vocab_size)
+        initial_variables = torch.zeros(B, L, 40, 3, target_vocab_size)
+        if self.dataset == 'SCAN':
+            initial_decodings = self.get_initial_scan(initial_decodings, input, input_tokens)
+        elif self.dataset == 'COGS':
+            initial_decodings, initial_variables = self.get_initial_cogs(initial_decodings, initial_variables, input, input_tokens)
         decodings = initial_decodings
-        pad_decoding = torch.tensor([0 for _ in range(target_vocab_size)])
-        pad_decoding[0] = 1
-        for i in range(B):
-            for j in range(L):
-                if input_tokens[i, j] == self.x_vocab.token_to_idx("run"):
-                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_RUN"), target_vocab_size)
-                elif input_tokens[i, j] == self.x_vocab.token_to_idx("look"):
-                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_LOOK"), target_vocab_size)
-                elif input_tokens[i, j] == self.x_vocab.token_to_idx("walk"):
-                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_WALK"), target_vocab_size)
-                elif input_tokens[i, j] == self.x_vocab.token_to_idx("jump"):
-                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_JUMP"), target_vocab_size)
-                elif input_tokens[i, j] == self.x_vocab.token_to_idx("left"):
-                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_LEFT"), target_vocab_size)
-                elif input_tokens[i, j] == self.x_vocab.token_to_idx("right"):
-                    initial_decodings[i, j, 0, :] = self.int_to_one_hot(self.y_vocab.token_to_idx("I_TURN_RIGHT"), target_vocab_size)
-                else:
-                    initial_decodings[i, j, 0, :] = pad_decoding
+        variables = initial_variables
         for t in range(max_depth - 1):
             if types_force != None:
                 # get target types for this step and remove them
@@ -334,15 +432,20 @@ class TypedBinaryTreeLSTM(nn.Module):
             N = max(spans) # find max span length
             V = len(self.y_vocab)
             input_decodings = torch.zeros(B, N, M, V)
+            input_variables = torch.zeros(B, N, 40, 3, V)
             for i in range(B):
-                input_decodings[i, :spans[i], :, :] = decodings[i, positions[i]:positions[i]+spans[i], :, :]
-            output_decodings, dt = self.treelstm_layer(input_decodings, target_types, spans)
+                input_decodings[i, :spans[i]] = decodings[i, positions[i]:positions[i]+spans[i]]
+                input_variables[i, :spans[i]] = variables[i, positions[i]:positions[i]+spans[i]]
+            output_decodings, output_variables = self.treelstm_layer(input_decodings, input_variables, target_types, spans)
             _, L, _, _ = decodings.size()
-            new_d = torch.zeros(B, L-1, M, V)
+            new_d = torch.zeros(B, L, M, V)
+            new_v = torch.zeros(B, L, 40, 3, V)
             for i in range(B):
                 s = spans[i]
                 new_d[i, :L+1-s, :, :] = basic.splice_in_types(decodings[i].view(1, L, M * V), positions[i].unsqueeze(0),
                                                               output_decodings[i].view(1, M * V), s).view(L+1-s, M, V)
+                new_v[i, :L+1-s, :, :] = basic.splice_in_types(variables[i].view(1, L, 40 * 3 * V), positions[i].unsqueeze(0),
+                                                              output_variables[i].view(1, 40 * 3 * V), s).view(L+1-s, 40, 3, V)
             decodings = new_d
-
-        return decodings.squeeze(1)
+            variables = new_v
+        return decodings[:, 0, :, :].squeeze(1)

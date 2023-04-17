@@ -119,6 +119,7 @@ def load_SCAN_add_jump_0_no_jump_oversampling():
     return load_SCAN(SCAN_ADD_JUMP_0_NO_JUMP_OVERSAMPLING_FILEPATH, SCAN_ADD_JUMP_4_TEST_FILEPATH)
 
 
+initial_decodings_scan = {'run':'I_RUN', 'look':'I_LOOK', 'walk':'I_WALK', 'jump':'I_JUMP', 'left':'I_TURN_LEFT', 'right':'I_TURN_RIGHT'}
 
 class PrimitiveScanTypes(IntEnum):
     '''
