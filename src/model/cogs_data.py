@@ -329,6 +329,8 @@ cogs_grammar = """
     vp_passive_dat2: AUX v_dat_pp np_inanimate_dobj BY np_animate_nsubj
     np_dobj: np_inanimate_dobj | np_animate_dobj
     np_unacc_subj: np_inanimate_dobj_nopp | np_animate_dobj_nopp
+    np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
+    np_animate_dobj_nopp1: det n_common_animate_dobj
     np_animate_dobj_nopp: det n_common_animate_dobj | n_prop_dobj
     np_animate_dobj: np_animate_dobj1 | np_animate_dobj2 | n_prop_dobj
     np_animate_dobj1: det n_common_animate_dobj
@@ -510,6 +512,7 @@ class Cogs_Types(IntEnum):
     P_BEDSIDE = 85
     INF = 86
     PAD = 87
+    NP_ANIMATE_DOBJ_NOPP1 = 88
 
 
 cogs_token_to_type = {
@@ -541,6 +544,7 @@ cogs_token_to_type = {
     "np_dobj": Cogs_Types.NP_DOBJ,
     "np_unacc_subj": Cogs_Types.NP_UNACC_SUBJ,
     "np_animate_dobj_nopp": Cogs_Types.NP_ANIMATE_DOBJ_NOPP,
+    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1,
     "np_animate_dobj": Cogs_Types.NP_ANIMATE_DOBJ,
     "np_animate_dobj1": Cogs_Types.NP_ANIMATE_DOBJ1,
     "np_animate_dobj2": Cogs_Types.NP_ANIMATE_DOBJ2,
@@ -604,6 +608,7 @@ cogs_token_to_type = {
     "PBEDSIDE": Cogs_Types.P_BEDSIDE,
     "INF": Cogs_Types.INF
 }
+
 
 exclude_types = ["PIOBJ", "PON", "PIN", "PBEDSIDE", "INF", "det", "C", "AUX", "BY",
                  "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
