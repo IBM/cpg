@@ -154,15 +154,15 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         for i in range(B):
             # get choices
             choices = [y_var.flatten()]
-            for n in range(40):
+            for n in range(20):
                 if torch.equal(variables[i, n], torch.zeros(3, V)):
                     choices.append(y_var.flatten())
                 else:
                     choices.append(variables[i, n].flatten())
             choices = torch.stack(choices, dim=0)
             # get variable list ordered according to the substitution template
-            var_sub = torch.zeros(10, 3, V)
-            for k in range(10):
+            var_sub = torch.zeros(6, 3, V)
+            for k in range(6):
                 var_sub[k] = torch.mm(temp_sub[i, k].unsqueeze(0), choices).view(3, V)
             # subsitute into slots
             idx = 0
@@ -175,7 +175,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     else:
                         new_d[i, j] = var_sub[idx, 0]
                     # break if we reach the end of variable list
-                    if idx == 9:
+                    if idx == 5:
                         break
                     idx += 1
         return new_d
@@ -213,11 +213,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                         self.decoder_sem[s-2][target_types[i]-9](type_embedding[i]).view(K, s+1).log_softmax(-1),
                         tau=self.gumbel_temperature, hard=True)
             new_d = self.apply_decoder_template(dt_sample, decodings, spans)
-            new_v = torch.zeros(B, 40, 3, V)
+            new_v = torch.zeros(B, 20, 3, V)
 
         elif self.dataset == 'COGS':
             new_d = torch.zeros(B, M, V)
-            new_v = torch.zeros(B, 40, 3, V)
+            new_v = torch.zeros(B, 20, 3, V)
             zero_vector = torch.full((V, 1), 0.).squeeze()
             zero_var = torch.zeros(3, V)
             pad_vector = torch.full((V, 1), 0.).squeeze()
@@ -234,13 +234,13 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             for i in range(B):
                 idx = 0
                 for j in range(N):
-                    while idx < 40 and not torch.equal(variables[i, j, idx, :], zero_var):
+                    while idx < 20 and not torch.equal(variables[i, j, idx, :], zero_var):
                         new_v[i, idx] = variables[i, j, idx]
                         idx += 1
-            temp_sub = torch.zeros(B, 10, 41)
+            temp_sub = torch.zeros(B, 6, 21)
             for i in range(B):
                 temp_sub[i] = torch.nn.functional.gumbel_softmax(
-                        self.decoder_sub[target_types[i]](type_embedding[i]).view(10, 41).log_softmax(-1),
+                        self.decoder_sub[target_types[i]](type_embedding[i]).view(6, 21).log_softmax(-1),
                         tau=self.gumbel_temperature, hard=True)
             new_d = self.apply_substitution_template(new_d, new_v, temp_sub)
         return new_d, new_v
@@ -401,7 +401,7 @@ class TypedBinaryTreeLSTM(nn.Module):
             target_types = self.scan_token_to_type_map[input_tokens.view(B*L)]
         M = self.max_seq_len
         initial_decodings = torch.zeros(B, L, self.max_seq_len, target_vocab_size)
-        initial_variables = torch.zeros(B, L, 40, 3, target_vocab_size)
+        initial_variables = torch.zeros(B, L, 20, 3, target_vocab_size)
         if self.dataset == 'SCAN':
             initial_decodings = self.get_initial_scan(initial_decodings, input, input_tokens)
         elif self.dataset == 'COGS':
@@ -432,20 +432,23 @@ class TypedBinaryTreeLSTM(nn.Module):
             N = max(spans) # find max span length
             V = len(self.y_vocab)
             input_decodings = torch.zeros(B, N, M, V)
-            input_variables = torch.zeros(B, N, 40, 3, V)
+            input_variables = torch.zeros(B, N, 20, 3, V)
             for i in range(B):
                 input_decodings[i, :spans[i]] = decodings[i, positions[i]:positions[i]+spans[i]]
                 input_variables[i, :spans[i]] = variables[i, positions[i]:positions[i]+spans[i]]
             output_decodings, output_variables = self.treelstm_layer(input_decodings, input_variables, target_types, spans)
             _, L, _, _ = decodings.size()
             new_d = torch.zeros(B, L, M, V)
-            new_v = torch.zeros(B, L, 40, 3, V)
+            new_v = torch.zeros(B, L, 20, 3, V)
             for i in range(B):
                 s = spans[i]
-                new_d[i, :L+1-s, :, :] = basic.splice_in_types(decodings[i].view(1, L, M * V), positions[i].unsqueeze(0),
-                                                              output_decodings[i].view(1, M * V), s).view(L+1-s, M, V)
-                new_v[i, :L+1-s, :, :] = basic.splice_in_types(variables[i].view(1, L, 40 * 3 * V), positions[i].unsqueeze(0),
-                                                              output_variables[i].view(1, 40 * 3 * V), s).view(L+1-s, 40, 3, V)
+                p = positions[i].unsqueeze(0)
+                new_d[i, :p] = decodings[i, :p]
+                new_d[i, p] = output_decodings[i]
+                new_d[i, p+1:L-s+1] = decodings[i, p+s:L]
+                new_v[i, :p] = variables[i, :p]
+                new_v[i, p] = output_variables[i]
+                new_v[i, p+1:L-s+1] = variables[i, p+s:L]
             decodings = new_d
             variables = new_v
         return decodings[:, 0, :, :].squeeze(1)

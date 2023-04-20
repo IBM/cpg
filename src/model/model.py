@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from src.model.treelstm import TypedBinaryTreeLSTM, FeedForward
 from src.model.scan_data import scan_word_to_type, scan_token_to_type
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, output_size, hidden_size, dropout_p=0.1, max_length=10, device='cpu'):
@@ -238,7 +240,7 @@ class CompositionalLearner(nn.Module):
         # initial decodings
         self.decoder_init = Decoder(y_vocab, decoder_hidden_dim, decoder_hidden_dim, decoder_num_layers)
         # substitution templates
-        self.decoder_sub = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 10 * 41)
+        self.decoder_sub = nn.ModuleList([FeedForward(decoder_hidden_dim, [decoder_hidden_dim], 6 * 21)
                                                     for _ in range(hidden_type_dim)])
         # model
         self.encoder = TypedBinaryTreeLSTM(word_dim=word_dim,
@@ -279,8 +281,12 @@ class CompositionalLearner(nn.Module):
 
         # TK DEBUG
         # x_embed = self.dropout(x_embed)
+        #with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+            #with record_function("model_inference"):
         decoding= self.encoder(input=x_embed, length=length, input_tokens=x,
-                               positions_force=positions_force,
-                               types_force=types_force,
-                               spans_force=spans_force)
+                                positions_force=positions_force,
+                                types_force=types_force,
+                                spans_force=spans_force)
+        # DEBUG
+        #print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
         return decoding
