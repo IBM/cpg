@@ -36,7 +36,7 @@ def train(args):
     elif dataset == "COGS":
         train_data, test_data = load_COGS(training_set, dev_set)
         max_x_seq_len = 20
-        max_y_seq_len = 200
+        max_y_seq_len = 60
         hidden_type_dim = 89
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
@@ -44,9 +44,9 @@ def train(args):
     logging.info(f"Train scan_data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
     logging.info(f"Test scan_data set size: {len(test_data)}")
     logging.info(f"Test scan_data sample:\n\tx: {test_data[0][0]}\n\ty: {test_data[0][1]}")
-    x_vocab = build_vocab([x for x, _ in train_data],
+    x_vocab = build_vocab([x for x, _ in train_data + test_data],
                            base_tokens=['<PAD>', '<UNK>'])
-    y_vocab = build_vocab([y for _, y in train_data],
+    y_vocab = build_vocab([y for _, y in train_data + test_data],
                            base_tokens=['<PAD>', '<SOS>', '<EOS>', '<UNK>'])
     if dataset == "COGS":
         y_vocab.add_token("y")
