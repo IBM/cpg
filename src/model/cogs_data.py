@@ -263,7 +263,8 @@ cogs_grammar = """
     s1: np_animate_nsubj vp_external
     s2: np_inanimate_nsubjpass vp_passive
     s3: np_animate_nsubjpass vp_passive_dat
-    vp_external: v_unerg | v_trans_omissible | vp_external1 | vp_external2 | vp_external3 | vp_external4 | vp_external5 | vp_external6 | vp_external7
+    vp_external: v_unerg | v_trans_omissible1 | vp_external1 | vp_external2 | vp_external3 | vp_external4 | vp_external5 | vp_external6 | vp_external7
+    v_trans_omissible1: v_trans_omissible
     vp_external1: v_unacc np_dobj
     vp_external2: v_trans_omissible np_dobj
     vp_external3: v_trans_not_omissible np_dobj
@@ -472,6 +473,7 @@ class Cogs_Types(IntEnum):
     INF = 86
     PAD = 87
     NP_ANIMATE_DOBJ_NOPP1 = 88
+    V_TRANS_OMISSIBLE1 = 89
 
 
 cogs_token_to_type = {
@@ -566,16 +568,15 @@ cogs_token_to_type = {
     "PIN": Cogs_Types.P_IN,
     "PBEDSIDE": Cogs_Types.P_BEDSIDE,
     "INF": Cogs_Types.INF,
-    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1
+    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1,
+    "v_trans_omissible1": Cogs_Types.V_TRANS_OMISSIBLE1
 }
 
 exclude_types = ["PIOBJ", "PON", "PIN", "PBEDSIDE", "INF", "det", "C", "AUX", "BY",
                  "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
                  "n_common_animate_nsubjpass", "n_common_inanimate_dobj", "n_common_inanimate_nsubjpass",
                  "n_prop_dobj", "n_prop_iobj", "n_prop_nsubj", "n_prop_nsubjpass", "n_on", "n_in",
-                 "n_beside", "v_trans_omissible", "v_trans_omissible_pp", "v_trans_not_omissible",
-                 "v_trans_not_omissible_pp", "v_cp_taking", "v_inf_taking", "v_unacc", "v_unacc_pp",
-                 "v_unerg", "v_inf", "v_dat", "v_dat_pp", "start"]
+                 "n_beside", "start", "vp_external", "v_trans_omissible"]
 
 five_span_types = ['vp_passive8', 'vp_passive_dat2']
 
@@ -598,7 +599,7 @@ one_span_types = ['n_common_animate_dobj', 'n_common_animate_iobj', 'n_common_an
                   'det', 'C', 'AUX', 'BY', 'PIOBJ', 'PON', 'PIN', 'PBEDSIDE', 'INF', 'pp_loc', 'np_beside', 'np_in', \
                   'np_on', 'np_inanimate_dobj', 'np_animate_nsubjpass', 'np_animate_nsubj', 'np_animate_iobj', \
                   'np_animate_dobj', 'np_unacc_subj', 'np_dobj', 'vp_passive_dat', 'vp_passive', 'vp_external', \
-                  'np_animate_dobj_nopp']
+                  'np_animate_dobj_nopp', 'v_trans_omissible1']
 
 
 def parse_cogs(parser, cogs_command):
@@ -632,7 +633,7 @@ def parse_cogs(parser, cogs_command):
         types.append(cogs_token_to_type[node.data.value])
     return positions, types, spans
 
-# generate initial decoding and variables
+# initial decoding and variables
 initial_decodings_cogs = {noun : '' for noun in set(noun_list)} |\
                          {verb : 'y . agent ( y , y ) | y . theme ( y , y ) | y . recipient ( y , y ) | y . ccomp ( y , y ) | y . xcomp ( y , y )'
                                   for verb in verbs_lemmas.keys()} |\
@@ -643,3 +644,20 @@ initial_decodings_cogs = {noun : '' for noun in set(noun_list)} |\
                          {'beside' : 'y . nmod . beside ( y , y )'} |\
                          {word : '' for word in ['that', 'was', 'by', 'to']}
 initial_variables_cogs = {noun : noun for noun in set(noun_list)} | verbs_lemmas
+
+# copy templates
+copy_temp_cogs = {5 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7]},
+                  6 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7]},
+                  12 : {5 : [1], 6 : [0, 2]},
+                  65 : [],
+                  66 : {5 : [0, 1]},
+                  67 : [],
+                  68 : [],
+                  69 : [],
+                  70 : [],
+                  72 : [],
+                  73 : {5 : [0]},
+                  74 : [],
+                  75 : [],
+                  76 : [],
+                  89 : {5 : [0]}}
