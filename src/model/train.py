@@ -225,7 +225,9 @@ def train(args):
         accuracy = torch.tensor(match).mean()
         # compute loss
         if is_training:
-            optimizer.zero_grad()
+            # zero gradients
+            for param in model.parameters():
+                param.grad = None
             loss.backward()
             clip_grad_norm_(parameters=params, max_norm=5)
             optimizer.step()
