@@ -36,8 +36,8 @@ def train(args):
     elif dataset == "COGS":
         train_data, test_data = load_COGS(training_set, dev_set)
         max_x_seq_len = 20
-        max_y_seq_len = 60
-        hidden_type_dim = 89
+        max_y_seq_len = 140 # must be divisible by 14
+        hidden_type_dim = 90
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train scan_data set size: {len(train_data)}")
@@ -60,7 +60,7 @@ def train(args):
         # TK DEBUG -- changed from 0
         curriculum_stage = 2
         # filter_fn = lambda x: select(x, curriculum_stage)
-        filter_fn = lambda x: len(x[0]) == curriculum_stage
+        filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
         train_data_curriculum = list(filter(filter_fn, train_data))
         #print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
@@ -243,15 +243,17 @@ def train(args):
     iter_count_stage = 1
     validated = False
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_stage > .9:
-            if curriculum_stage == 2:
-                for i in [12, 13, 14, 15]:
-                    model.encoder.treelstm_layer.record_template(i, 2)
-            if curriculum_stage == 3:
-                for i in [9, 10, 16, 17, 18, 19]:
-                    model.encoder.treelstm_layer.record_template(i, 3)
+        if args.use_curriculum and train_accuracy_stage > .6:
+            # record SCAN templates
+            if dataset == 'SCAN':
+                if curriculum_stage == 2:
+                    for i in [12, 13, 14, 15]:
+                        model.encoder.treelstm_layer.record_template(i, 2)
+                if curriculum_stage == 3:
+                    for i in [9, 10, 16, 17, 18, 19]:
+                        model.encoder.treelstm_layer.record_template(i, 3)
             curriculum_stage += 1
-            filter_fn = lambda x: len(x[0]) <= curriculum_stage
+            filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
             train_data_curriculum = list(filter(filter_fn, train_data))
             print(train_data_curriculum)
             print("curriculum size: ", len(train_data_curriculum))
@@ -306,7 +308,7 @@ def train(args):
             print("iter count: ", iter_count)
 
             # validate once for each stage, and once every 500 iterations at stage 6
-            if (not validated and train_accuracy_stage > 0.89) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
+            if (not validated and train_accuracy_stage > 0.59) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
                 validated = True
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
