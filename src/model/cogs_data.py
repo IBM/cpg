@@ -291,6 +291,9 @@ cogs_grammar = """
     np_unacc_subj: np_inanimate_dobj_nopp | np_animate_dobj_nopp
     np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
     np_animate_dobj_nopp1: det n_common_animate_dobj
+    np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
+    np_animate_dobj_nopp1: det n_common_animate_dobj
+    np_animate_dobj_nopp: det n_common_animate_dobj | n_prop_dobj
     np_animate_dobj: np_animate_dobj1 | np_animate_dobj2 | n_prop_dobj
     np_animate_dobj1: det n_common_animate_dobj
     np_animate_dobj2: det n_common_animate_dobj pp_loc            
@@ -504,6 +507,7 @@ cogs_token_to_type = {
     "np_dobj": Cogs_Types.NP_DOBJ,
     "np_unacc_subj": Cogs_Types.NP_UNACC_SUBJ,
     "np_animate_dobj_nopp": Cogs_Types.NP_ANIMATE_DOBJ_NOPP,
+    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1,
     "np_animate_dobj": Cogs_Types.NP_ANIMATE_DOBJ,
     "np_animate_dobj1": Cogs_Types.NP_ANIMATE_DOBJ1,
     "np_animate_dobj2": Cogs_Types.NP_ANIMATE_DOBJ2,
