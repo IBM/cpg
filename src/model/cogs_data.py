@@ -15,7 +15,8 @@ def load_COGS_file(filepath):
         data = []
         for line in tsv_file:
             x = line[:2][0].replace(".", "").lower().split()
-            y = line[:2][1].lower().split()
+            # remove x _
+            y = line[:2][1].replace(' x ', '').replace('_', '').lower().split()
             data.append([x, y])
     return data
 
@@ -71,7 +72,7 @@ proper_nouns = list(map(lambda n: n.lower(), proper_nouns))
 # 100 nouns that can appear with "on"
 on_nouns = [
     'table', 'stage', 'bed', 'chair', 'stool', 'road', 'tree', 'box', 'surface', 'seat',
-    'speaker', 'computer', 'rock', 'boat', 'cabinet', 'TV', 'plate', 'desk', 'bowl', 'bench',
+    'speaker', 'computer', 'rock', 'boat', 'cabinet', 'tv', 'plate', 'desk', 'bowl', 'bench',
     'shelf', 'cloth', 'piano', 'bible', 'leaflet', 'sheet', 'cupboard', 'truck', 'tray', 'notebook',
     'blanket', 'deck', 'coffin', 'log', 'ladder', 'barrel', 'rug', 'canvas', 'tiger', 'towel',
     'throne', 'booklet', 'sock', 'corpse', 'sofa', 'keyboard', 'book', 'pillow', 'pad', 'train',
@@ -100,7 +101,7 @@ in_nouns = [
 beside_nouns = [
     'table', 'stage', 'bed', 'chair', 'book', 'road', 'tree', 'machine', 'house', 'seat',
     'speaker', 'computer', 'rock', 'car', 'box', 'cup', 'glass', 'bag', 'flower', 'boat',
-    'vehicle', 'key', 'painting', 'cabinet', 'TV', 'bottle', 'cat', 'desk', 'shoe', 'mirror',
+    'vehicle', 'key', 'painting', 'cabinet', 'tv', 'bottle', 'cat', 'desk', 'shoe', 'mirror',
     'clock', 'bench', 'bike', 'lamp', 'lion', 'piano', 'crystal', 'toy', 'duck', 'sword',
     'sculpture', 'rod', 'truck', 'basket', 'bear', 'nest', 'sphere', 'bush', 'surgeon', 'poster',
     'throne', 'giant', 'trophy', 'hedge', 'log', 'tent', 'ladder', 'helicopter', 'barrel', 'yacht',
@@ -171,7 +172,8 @@ V_unacc_pp = [
     'rolled', 'frozen', 'burned', 'shortened', 'floated',
     'grown', 'slid', 'broken', 'crumpled', 'split',
     'changed', 'snapped', 'disintegrated', 'collapsed', 'decomposed',
-    'doubled', 'improved', 'inflated', 'enlarged', 'reddened'
+    'doubled', 'improved', 'inflated', 'enlarged', 'reddened',
+    'shattered', 'blessed', 'squeezed'
 ]
 
 V_unerg = [
@@ -251,7 +253,7 @@ pos_d = {
     'in': 'ADP',
     'beside': 'ADP',
     'that': 'SCONJ',
-    'was': 'AUX',
+    'was': 'aux',
     'by': 'ADP'
 }
 
@@ -268,23 +270,23 @@ cogs_grammar = """
     vp_external1: v_unacc np_dobj
     vp_external2: v_trans_omissible np_dobj
     vp_external3: v_trans_not_omissible np_dobj
-    vp_external4: v_inf_taking INF v_inf
-    vp_external5: v_cp_taking C start
+    vp_external4: v_inf_taking inf v_inf
+    vp_external5: v_cp_taking c start
     vp_external6: v_dat np_inanimate_dobj pp_iobj
     vp_external7: v_dat np_animate_iobj np_inanimate_dobj         
     vp_internal: np_unacc_subj v_unacc
     vp_passive: vp_passive1 | vp_passive2 | vp_passive3 | vp_passive4 | vp_passive5 | vp_passive6 | vp_passive7 | vp_passive8
-    vp_passive1: AUX v_trans_not_omissible_pp
-    vp_passive2: AUX v_trans_not_omissible_pp BY np_animate_nsubj
-    vp_passive3: AUX v_trans_omissible_pp
-    vp_passive4: AUX v_trans_omissible_pp BY np_animate_nsubj
-    vp_passive5: AUX v_unacc_pp
-    vp_passive6: AUX v_unacc_pp BY np_animate_nsubj
-    vp_passive7: AUX v_dat_pp pp_iobj
-    vp_passive8: AUX v_dat_pp pp_iobj BY np_animate_nsubj       
+    vp_passive1: aux v_trans_not_omissible_pp
+    vp_passive2: aux v_trans_not_omissible_pp by np_animate_nsubj
+    vp_passive3: aux v_trans_omissible_pp
+    vp_passive4: aux v_trans_omissible_pp by np_animate_nsubj
+    vp_passive5: aux v_unacc_pp
+    vp_passive6: aux v_unacc_pp by np_animate_nsubj
+    vp_passive7: aux v_dat_pp pp_iobj
+    vp_passive8: aux v_dat_pp pp_iobj by np_animate_nsubj
     vp_passive_dat: vp_passive_dat1 | vp_passive_dat2
-    vp_passive_dat1: AUX v_dat_pp np_inanimate_dobj
-    vp_passive_dat2: AUX v_dat_pp np_inanimate_dobj BY np_animate_nsubj
+    vp_passive_dat1: aux v_dat_pp np_inanimate_dobj
+    vp_passive_dat2: aux v_dat_pp np_inanimate_dobj by np_animate_nsubj
     np_dobj: np_inanimate_dobj | np_animate_dobj
     np_unacc_subj: np_inanimate_dobj_nopp | np_animate_dobj_nopp
     np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
@@ -313,9 +315,9 @@ cogs_grammar = """
     np_bedside1: det n_beside pp_loc
     np_bedside2: det n_beside
     det: \"the\" | \"a\"
-    C: \"that\"
-    AUX: \"was\"
-    BY: \"by\"
+    c: \"that\"
+    aux: \"was\"
+    by: \"by\"
     n_common_animate_dobj: {animate_nouns_str}
     n_common_animate_iobj: {animate_nouns_str}
     n_common_animate_nsubj: {animate_nouns_str}
@@ -341,16 +343,16 @@ cogs_grammar = """
     v_inf: {V_inf_str}
     v_dat: {V_dat_str}
     v_dat_pp: {V_dat_pp_str}
-    pp_iobj: PIOBJ np_animate_iobj
+    pp_iobj: piobj np_animate_iobj
     pp_loc: pp_loc1 | pp_loc2 | pp_loc3
-    pp_loc1: PON np_on
-    pp_loc2: PIN np_in
-    pp_loc3: PBEDSIDE np_beside
-    PIOBJ: \"to\"
-    PON: \"on\"
-    PIN: \"in\"
-    PBEDSIDE: \"beside\"
-    INF: \"to\"
+    pp_loc1: pon np_on
+    pp_loc2: pin np_in
+    pp_loc3: pbedside np_beside
+    piobj: \"to\"
+    pon: \"on\"
+    pin: \"in\"
+    pbedside: \"beside\"
+    inf: \"to\"
     
     %import common.LETTER
     %import common.WS
@@ -448,7 +450,7 @@ class Cogs_Types(IntEnum):
     N_BEDSIDE = 63
     V_TRANS_OMISSABLE = 64
     V_TRANS_OMISSABLE_PP = 65
-    V_TRANS_NOT_OMISSABLE = 66
+    V_TRANS_NOT_OMISSABLE = 66 # TODO: Is 67 missing?
     V_TRANS_NOT_OMISSABLE_PP = 68
     V_CP_TAKING = 69
     V_INF_TAKING = 70
@@ -526,9 +528,9 @@ cogs_token_to_type = {
     "np_bedside1": Cogs_Types.NP_BEDSIDE1,
     "np_bedside2": Cogs_Types.NP_BEDSIDE2,
     "det": Cogs_Types.DET,
-    "C": Cogs_Types.C,
-    "AUX": Cogs_Types.AUX,
-    "BY": Cogs_Types.BY,
+    "c": Cogs_Types.C,
+    "aux": Cogs_Types.AUX,
+    "by": Cogs_Types.BY,
     "n_common_animate_dobj": Cogs_Types.N_COMMON_ANIMATE_DOBJ,
     "n_common_animate_iobj": Cogs_Types.N_COMMON_ANIMATE_IOBJ,
     "n_common_animate_nsubj": Cogs_Types.N_COMMON_ANIMATE_NSUBJ,
@@ -559,16 +561,16 @@ cogs_token_to_type = {
     "pp_loc1": Cogs_Types.PP_LOC1,
     "pp_loc2": Cogs_Types.PP_LOC2,
     "pp_loc3": Cogs_Types.PP_LOC3,
-    "PIOBJ": Cogs_Types.P_IOBJ,
-    "PON": Cogs_Types.P_ON,
-    "PIN": Cogs_Types.P_IN,
-    "PBEDSIDE": Cogs_Types.P_BEDSIDE,
-    "INF": Cogs_Types.INF,
+    "piobj": Cogs_Types.P_IOBJ,
+    "pon": Cogs_Types.P_ON,
+    "pin": Cogs_Types.P_IN,
+    "pbedside": Cogs_Types.P_BEDSIDE,
+    "inf": Cogs_Types.INF,
     "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1,
     "v_trans_omissible1": Cogs_Types.V_TRANS_OMISSIBLE1
 }
 
-exclude_types = ["PIOBJ", "PON", "PIN", "PBEDSIDE", "INF", "det", "C", "AUX", "BY",
+exclude_types = ["piobj", "pon", "pin", "pbedside", "det", "c", "aux", "by", "inf",
                  "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
                  "n_common_animate_nsubjpass", "n_common_inanimate_dobj", "n_common_inanimate_nsubjpass",
                  "n_prop_dobj", "n_prop_iobj", "n_prop_nsubj", "n_prop_nsubjpass", "n_on", "n_in",
@@ -592,7 +594,7 @@ one_span_types = ['n_common_animate_dobj', 'n_common_animate_iobj', 'n_common_an
                   'n_prop_dobj', 'n_prop_iobj', 'n_prop_nsubj', 'n_prop_nsubjpass', 'n_on', 'n_in', 'n_beside', \
                   'v_trans_omissible', 'v_trans_omissible_pp', 'v_trans_not_omissible', 'v_trans_not_omissible_pp', \
                   'v_cp_taking', 'v_inf_taking', 'v_unacc', 'v_unacc_pp', 'v_unerg', 'v_inf', 'v_dat', 'v_dat_pp', \
-                  'det', 'C', 'AUX', 'BY', 'PIOBJ', 'PON', 'PIN', 'PBEDSIDE', 'INF', 'pp_loc', 'np_beside', 'np_in', \
+                  'det', 'c', 'aux', 'by', 'piobj', 'pon', 'pin', 'pbedside', 'inf', 'pp_loc', 'np_beside', 'np_in', \
                   'np_on', 'np_inanimate_dobj', 'np_animate_nsubjpass', 'np_animate_nsubj', 'np_animate_iobj', \
                   'np_animate_dobj', 'np_unacc_subj', 'np_dobj', 'vp_passive_dat', 'vp_passive', 'vp_external', \
                   'np_animate_dobj_nopp', 'v_trans_omissible1']
@@ -632,28 +634,34 @@ def parse_cogs(parser, cogs_command):
 # initial decoding and variables
 initial_decodings_cogs = {noun : '' for noun in set(noun_list)} |\
                          {verb : 'y . agent ( y , y ) | y . theme ( y , y ) | y . recipient ( y , y ) | y . ccomp ( y , y ) | y . xcomp ( y , y )'
-                                  for verb in verbs_lemmas.keys()} |\
+                                  for verb in set(verbs_lemmas.keys()).union(set(V_inf))} |\
                          {'the' : '* y ( y )'} |\
                          {'a' : 'y ( y )'} |\
                          {'on' : 'y . nmod . on ( y , y )'} |\
                          {'in' : 'y . nmod . in ( y , y )'} |\
                          {'beside' : 'y . nmod . beside ( y , y )'} |\
                          {word : '' for word in ['that', 'was', 'by', 'to']}
-initial_variables_cogs = {noun : noun for noun in set(noun_list)} | verbs_lemmas
+initial_variables_cogs = {noun : noun for noun in set(noun_list)} | verbs_lemmas | {verb : verb for verb in set(V_inf)}
 
 # copy templates
-copy_temp_cogs = {5 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7]},
-                  6 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7]},
+copy_temp_cogs = {5 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7], 9 : [0, 1, 5, 6, 7, 8], 10 : [0, 1, 5, 6, 7, 8, 9]},
+                  6 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7], 9 : [0, 1, 5, 6, 7, 8], 10 : [0, 1, 5, 6, 7, 8, 9]},
+                  10 : {5 : [0, 1, 2], 6 : [0, 1, 2, 5], 7 : [0, 1, 2, 5, 6], 8 : [0, 1, 2, 5, 6, 7], 9 : [0, 1, 2, 5, 6, 7, 8], 10 : [0, 1, 2, 5, 6, 7, 8, 9]},
+                  11 : {5 : [0, 2, 1], 6 : [0, 2, 1, 5], 7 : [0, 2, 1, 5, 6], 8 : [0, 2, 1, 5, 6, 7], 9 : [0, 2, 1, 5, 6, 7, 8], 10 : [0, 2, 1, 5, 6, 7, 8, 9]},
                   12 : {5 : [1], 6 : [0, 2]},
-                  65 : [],
+                  14 : {5 : [1]},
+                  15 : {5 : [1, 0], 6 : [1, 0, 5]},
+                  16 : {5 : [1]},
+                  17 : {5 : [1, 0], 6 : [1, 0, 5]},
+                  18 : {5 : [1]},
+                  19 : {5 : [1, 0], 6 : [1, 0, 5]},
+                  20 : {5 : [1, 2], 6 : [1, 2, 5]},
+                  21 : {5 : [1, 2, 0], 6 : [1, 2, 0, 5], 7 : [1, 2, 0, 5, 6]},
+                  23 : {5 : [2, 1], 6 : [2, 1, 5], 7 : [2, 1, 5, 6], 8 : [2, 1, 5, 6, 7], 9 : [2, 1, 5, 6, 7, 8], 10 : [2, 1, 5, 6, 7, 8, 9]},
+                  24 : {5 : [2, 1, 0], 6 : [2, 1, 0, 5], 7 : [2, 1, 0, 5, 6], 8 : [2, 1, 0, 5, 6, 7], 9 : [2, 1, 0, 5, 6, 7, 8], 10 : [2, 1, 0, 5, 6, 7, 8, 9]},
                   66 : {5 : [0, 1]},
-                  67 : [],
-                  68 : [],
-                  69 : [],
-                  70 : [],
-                  72 : [],
+                  69 : {5 : [0, 3]},
+                  70 : {5 : [0, 4]},
                   73 : {5 : [0]},
-                  74 : [],
-                  75 : [],
-                  76 : [],
+                  74 : {5 : [0]},
                   89 : {5 : [0]}}

@@ -403,9 +403,11 @@ class TypedBinaryTreeLSTM(nn.Module):
                 if input_token != '<PAD>':
                     target_tokens = initial_decodings_cogs[input_token]
                     # get initial variables
-                    initial_variables[i, j, 0, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx('x'), V)
-                    initial_variables[i, j, 0, 1, :] = int_to_one_hot(self.y_vocab.token_to_idx('_'), V)
-                    initial_variables[i, j, 0, 2, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
+                    #initial_variables[i, j, 0, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx('x'), V)
+                    #initial_variables[i, j, 0, 1, :] = int_to_one_hot(self.y_vocab.token_to_idx('_'), V)
+                    #initial_variables[i, j, 0, 2, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
+                    # remove x _s
+                    initial_variables[i, j, 0, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
                     if input_token in initial_variables_cogs.keys():
                         target_variable = initial_variables_cogs[input_token]
                         initial_variables[i, j, 1, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_variable), V)
