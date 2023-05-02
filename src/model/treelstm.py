@@ -256,15 +256,15 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                         if t == len(copy_temp):
                             break
                         new_d[i, t] = choices[copy_temp[t]]
-            # concatenate input variables
+            temp_sub = torch.zeros(B, 6, 21)
             for i in range(B):
+                # concatenate input variables
                 idx = 0
                 for j in range(N):
                     while idx < 20 and not torch.equal(variables[i, j, idx, :], zero_var):
                         new_v[i, idx] = variables[i, j, idx]
                         idx += 1
-            temp_sub = torch.zeros(B, 6, 21)
-            for i in range(B):
+                # get substitution templates
                 if target_types[i].item() != 87:
                     template = self.decoder_sub[target_types[i]](type_embedding[i]).view(6, 21)
                     temp_sub[i, :, :idx+1] = torch.nn.functional.gumbel_softmax(
