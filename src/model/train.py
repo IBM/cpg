@@ -203,7 +203,7 @@ def train(args):
         # compute cross entropy loss of the decodings against the ground truth
         # decoding_log = torch.clamp(decoding, min=1e-10, max=1.0).log()
         # loss = F.cross_entropy(torch.flatten(decoding_log, start_dim=0, end_dim=1), expected_padded.flatten().long())
-        loss = F.cross_entropy(torch.flatten(decoding, start_dim=0, end_dim=1), expected_padded.flatten().long())
+        loss = F.cross_entropy(torch.clamp(torch.flatten(decoding, start_dim=0, end_dim=1), min=1.0e-20, max=1.0), expected_padded.flatten().long())
 
         # compute template loss
         # dt-all: B x ? x 8 (probs -- verify)

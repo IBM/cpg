@@ -266,9 +266,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             temp_sub = torch.zeros(B, 6, 21)
             for i in range(B):
                 if target_types[i].item() != 87:
-                    temp_sub[i] = torch.nn.functional.gumbel_softmax(
-                            self.decoder_sub[target_types[i]](type_embedding[i]).view(6, 21).log_softmax(-1),
-                            tau=self.gumbel_temperature, hard=True)
+                    template = self.decoder_sub[target_types[i]](type_embedding[i]).view(6, 21)
+                    temp_sub[i, :, :idx+1] = torch.nn.functional.gumbel_softmax(
+                            template[:, :idx+1].log_softmax(-1), tau=self.gumbel_temperature, hard=True)
                     # debug
                     #print('template for type ' + str(target_types[i].item()) + ' is ' + str(temp_sub[i].argmax(-1)))
                 else:
