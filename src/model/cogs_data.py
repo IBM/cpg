@@ -15,8 +15,8 @@ def load_COGS_file(filepath):
         data = []
         for line in tsv_file:
             x = line[:2][0].replace(".", "").lower().split()
-            # remove x _
-            y = line[:2][1].replace(' x ', '').replace('_', '').lower().split()
+            # remove x _ ; AND
+            y = line[:2][1].replace(' x ', '').replace('_', '').replace('AND', '').replace(';', '').lower().split()
             data.append([x, y])
     return data
 
@@ -113,7 +113,6 @@ beside_nouns = [
 ]
 
 noun_list = animate_nouns + inanimate_nouns + proper_nouns + on_nouns + in_nouns + beside_nouns
-print(len(set(noun_list)))
 
 # Levin, '1.2.1 Unspecified Object Alternation'
 # And some intuition-based selection.
@@ -205,8 +204,6 @@ V_dat_pp = [
     'loaned', 'posted', 'returned', 'slipped', 'wired'
 ]
 
-print(len(set(V_trans_omissible + V_trans_not_omissible + V_cp_taking + V_unacc + V_unerg + V_dat)))
-
 verbs_lemmas = {
     'ate': 'eat', 'painted': 'paint', 'drew': 'draw', 'cleaned': 'clean',
     'cooked': 'cook', 'dusted': 'dust', 'hunted': 'hunt', 'nursed': 'nurse',
@@ -245,18 +242,6 @@ verbs_lemmas = {
     'melted': 'melt', 'blessed': 'bless'
 }
 
-pos_d = {
-    'a': 'DET',
-    'the': 'DET',
-    'to': 'ADP',
-    'on': 'ADP',
-    'in': 'ADP',
-    'beside': 'ADP',
-    'that': 'SCONJ',
-    'was': 'aux',
-    'by': 'ADP'
-}
-
 def quote(l):
     return map(lambda x: "\"" + x + "\"", l)
 
@@ -265,28 +250,27 @@ cogs_grammar = """
     s1: np_animate_nsubj vp_external
     s2: np_inanimate_nsubjpass vp_passive
     s3: np_animate_nsubjpass vp_passive_dat
-    vp_external: v_unerg | v_trans_omissible1 | vp_external1 | vp_external2 | vp_external3 | vp_external4 | vp_external5 | vp_external6 | vp_external7
-    v_trans_omissible1: v_trans_omissible
-    vp_external1: v_unacc np_dobj
-    vp_external2: v_trans_omissible np_dobj
+    vp_external: v_unerg | v_trans_omissible_p1 | vp_external1 | vp_external2 | vp_external3 | vp_external4 | vp_external5 | vp_external6 | vp_external7
+    vp_external1: v_unacc_p1 np_dobj
+    vp_external2: v_trans_omissible_p2 np_dobj
     vp_external3: v_trans_not_omissible np_dobj
     vp_external4: v_inf_taking inf v_inf
     vp_external5: v_cp_taking c start
-    vp_external6: v_dat np_inanimate_dobj pp_iobj
-    vp_external7: v_dat np_animate_iobj np_inanimate_dobj         
-    vp_internal: np_unacc_subj v_unacc
+    vp_external6: v_dat_p1 np_inanimate_dobj pp_iobj
+    vp_external7: v_dat_p2 np_animate_iobj np_inanimate_dobj
+    vp_internal: np_unacc_subj v_unacc_p2
     vp_passive: vp_passive1 | vp_passive2 | vp_passive3 | vp_passive4 | vp_passive5 | vp_passive6 | vp_passive7 | vp_passive8
-    vp_passive1: aux v_trans_not_omissible_pp
-    vp_passive2: aux v_trans_not_omissible_pp by np_animate_nsubj
-    vp_passive3: aux v_trans_omissible_pp
-    vp_passive4: aux v_trans_omissible_pp by np_animate_nsubj
-    vp_passive5: aux v_unacc_pp
-    vp_passive6: aux v_unacc_pp by np_animate_nsubj
-    vp_passive7: aux v_dat_pp pp_iobj
-    vp_passive8: aux v_dat_pp pp_iobj by np_animate_nsubj
+    vp_passive1: aux v_trans_not_omissible_pp_p1
+    vp_passive2: aux v_trans_not_omissible_pp_p2 by np_animate_nsubj
+    vp_passive3: aux v_trans_omissible_pp_p1
+    vp_passive4: aux v_trans_omissible_pp_p2 by np_animate_nsubj
+    vp_passive5: aux v_unacc_pp_p1
+    vp_passive6: aux v_unacc_pp_p2 by np_animate_nsubj
+    vp_passive7: aux v_dat_pp_p1 pp_iobj
+    vp_passive8: aux v_dat_pp_p2 pp_iobj by np_animate_nsubj
     vp_passive_dat: vp_passive_dat1 | vp_passive_dat2
-    vp_passive_dat1: aux v_dat_pp np_inanimate_dobj
-    vp_passive_dat2: aux v_dat_pp np_inanimate_dobj by np_animate_nsubj
+    vp_passive_dat1: aux v_dat_pp_p3 np_inanimate_dobj
+    vp_passive_dat2: aux v_dat_pp_p4 np_inanimate_dobj by np_animate_nsubj
     np_dobj: np_inanimate_dobj | np_animate_dobj
     np_unacc_subj: np_inanimate_dobj_nopp | np_animate_dobj_nopp
     np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
@@ -331,18 +315,27 @@ cogs_grammar = """
     n_on: {on_nouns_str}
     n_in: {in_nouns_str}
     n_beside: {beside_nouns_str}
-    v_trans_omissible: {V_trans_omissible_str}
-    v_trans_omissible_pp: {V_trans_omissible_pp_str}
+    v_trans_omissible_p1: {V_trans_omissible_str}
+    v_trans_omissible_p2: {V_trans_omissible_str}
+    v_trans_omissible_pp_p1: {V_trans_omissible_pp_str}
+    v_trans_omissible_pp_p2: {V_trans_omissible_pp_str}
     v_trans_not_omissible: {V_trans_not_omissible_str}
-    v_trans_not_omissible_pp: {V_trans_not_omissible_pp_str}
+    v_trans_not_omissible_pp_p1: {V_trans_not_omissible_pp_str}
+    v_trans_not_omissible_pp_p2: {V_trans_not_omissible_pp_str}
     v_cp_taking: {V_cp_taking_str}
     v_inf_taking: {V_inf_taking_str}
-    v_unacc: {V_unacc_str}
-    v_unacc_pp: {V_unacc_pp_str}
+    v_unacc_p1: {V_unacc_str}
+    v_unacc_p2: {V_unacc_str}
+    v_unacc_pp_p1: {V_unacc_pp_str}
+    v_unacc_pp_p2: {V_unacc_pp_str}
     v_unerg: {V_unerg_str}
     v_inf: {V_inf_str}
-    v_dat: {V_dat_str}
-    v_dat_pp: {V_dat_pp_str}
+    v_dat_p1: {V_dat_str}
+    v_dat_p2: {V_dat_str}
+    v_dat_pp_p1: {V_dat_pp_str}
+    v_dat_pp_p2: {V_dat_pp_str}
+    v_dat_pp_p3: {V_dat_pp_str}
+    v_dat_pp_p4: {V_dat_pp_str}
     pp_iobj: piobj np_animate_iobj
     pp_loc: pp_loc1 | pp_loc2 | pp_loc3
     pp_loc1: pon np_on
@@ -380,99 +373,107 @@ cogs_grammar = """
 
 
 class Cogs_Types(IntEnum):
-    START = 0
-    S1 = 1
-    S2 = 2
-    S3 = 3
-    VP_EXTERNAL = 4
-    VP_EXTERNAL1 = 5
-    VP_EXTERNAL2 = 6
-    VP_EXTERNAL3 = 7
-    VP_EXTERNAL4 = 8
-    VP_EXTERNAL5 = 9
-    VP_EXTERNAL6 = 10
-    VP_EXTERNAL7 = 11
-    VP_INTERNAL = 12
-    VP_PASSIVE = 13
-    VP_PASSIVE1 = 14
-    VP_PASSIVE2 = 15
-    VP_PASSIVE3 = 16
-    VP_PASSIVE4 = 17
-    VP_PASSIVE5 = 18
-    VP_PASSIVE6 = 19
-    VP_PASSIVE7 = 20
-    VP_PASSIVE8 = 21
-    VP_PASSIVE_DAT = 22
-    VP_PASSIVE_DAT1 = 23
-    VP_PASSIVE_DAT2 = 24
-    NP_DOBJ = 25
-    NP_UNACC_SUBJ = 26
-    NP_ANIMATE_DOBJ_NOPP = 27
-    NP_ANIMATE_DOBJ = 28
-    NP_ANIMATE_DOBJ1 = 29
-    NP_ANIMATE_DOBJ2 = 30
-    NP_ANIMATE_IOBJ = 31
-    NP_ANIMATE_IOBJ1 = 32
-    NP_ANIMATE_NSUBJ = 33
-    NP_ANIMATE_NSUBJ1 = 34
-    NP_ANIMATE_NSUBJPASS = 35
-    NP_ANIMATE_NSUBJPASS1 = 36
-    NP_INANIMATE_DOBJ = 37
-    NP_INANIMATE_DOBJ1 = 38
-    NP_INANIMATE_DOBJ2 = 39
-    NP_INANIMATE_DOBJ_NOPP = 40
-    NP_INANIMATE_NSUBJPASS = 41
-    NP_ON = 42
-    NP_ON1 = 43
-    NP_ON2 = 44
-    NP_IN = 45
-    NP_IN1 = 46
-    NP_IN2 = 47
-    NP_BEDSIDE = 48
-    NP_BEDSIDE1 = 49
-    NP_BEDSIDE2 = 50
-    DET = 51
-    C = 52
-    AUX = 53
-    BY = 54
-    N_COMMON_ANIMATE_DOBJ = 55
-    N_COMMON_ANIMATE_IOBJ = 55
-    N_COMMON_ANIMATE_NSUBJ = 55
-    N_COMMON_ANIMATE_NSUBJPASS = 55
-    N_COMMON_INANIMATE_DOBJ = 55
-    N_COMMON_INANIMATE_NSUBJPASS = 56
-    N_PROP_DOBJ = 57
-    N_PROP_IOBJ = 58
-    N_PROP_NSUBJ = 59
-    N_PROP_NSUBJPASS = 60
-    N_ON = 61
-    N_IN = 62
-    N_BEDSIDE = 63
-    V_TRANS_OMISSABLE = 64
-    V_TRANS_OMISSABLE_PP = 65
-    V_TRANS_NOT_OMISSABLE = 66 # TODO: Is 67 missing?
-    V_TRANS_NOT_OMISSABLE_PP = 68
-    V_CP_TAKING = 69
-    V_INF_TAKING = 70
-    V_UNACC = 71
-    V_UNACC_PP = 72
-    V_UNERG = 73
-    V_INF = 74
-    V_DAT = 75
-    V_DAT_PP = 76
-    PP_IOBJ = 77
-    PP_LOC = 78
-    PP_LOC1 = 79
-    PP_LOC2 = 80
-    PP_LOC3 = 81
-    P_IOBJ = 82
-    P_ON = 83
-    P_IN = 84
-    P_BEDSIDE = 85
-    INF = 86
-    PAD = 87
-    NP_ANIMATE_DOBJ_NOPP1 = 88
-    V_TRANS_OMISSIBLE1 = 89
+    PAD = 0
+    START = 1
+    S1 = 2
+    S2 = 3
+    S3 = 4
+    VP_EXTERNAL = 5
+    VP_EXTERNAL1 = 6
+    VP_EXTERNAL2 = 7
+    VP_EXTERNAL3 = 8
+    VP_EXTERNAL4 = 9
+    VP_EXTERNAL5 = 10
+    VP_EXTERNAL6 = 11
+    VP_EXTERNAL7 = 12
+    VP_INTERNAL = 13
+    VP_PASSIVE = 14
+    VP_PASSIVE1 = 15
+    VP_PASSIVE2 = 16
+    VP_PASSIVE3 = 17
+    VP_PASSIVE4 = 18
+    VP_PASSIVE5 = 19
+    VP_PASSIVE6 = 20
+    VP_PASSIVE7 = 21
+    VP_PASSIVE8 = 22
+    VP_PASSIVE_DAT = 23
+    VP_PASSIVE_DAT1 = 24
+    VP_PASSIVE_DAT2 = 25
+    NP_DOBJ = 26
+    NP_UNACC_SUBJ = 27
+    NP_ANIMATE_DOBJ_NOPP = 28
+    NP_ANIMATE_DOBJ_NOPP1 = 29
+    NP_ANIMATE_DOBJ = 30
+    NP_ANIMATE_DOBJ1 = 31
+    NP_ANIMATE_DOBJ2 = 32
+    NP_ANIMATE_IOBJ = 33
+    NP_ANIMATE_IOBJ1 = 34
+    NP_ANIMATE_NSUBJ = 35
+    NP_ANIMATE_NSUBJ1 = 36
+    NP_ANIMATE_NSUBJPASS = 37
+    NP_ANIMATE_NSUBJPASS1 = 38
+    NP_INANIMATE_DOBJ = 39
+    NP_INANIMATE_DOBJ1 = 40
+    NP_INANIMATE_DOBJ2 = 41
+    NP_INANIMATE_DOBJ_NOPP = 42
+    NP_INANIMATE_NSUBJPASS = 43
+    NP_ON = 44
+    NP_ON1 = 45
+    NP_ON2 = 46
+    NP_IN = 47
+    NP_IN1 = 48
+    NP_IN2 = 49
+    NP_BEDSIDE = 50
+    NP_BEDSIDE1 = 51
+    NP_BEDSIDE2 = 52
+    DET = 53
+    C = 54
+    AUX = 55
+    BY = 56
+    N_COMMON_ANIMATE_DOBJ = 57
+    N_COMMON_ANIMATE_IOBJ = 58
+    N_COMMON_ANIMATE_NSUBJ = 59
+    N_COMMON_ANIMATE_NSUBJPASS = 60
+    N_COMMON_INANIMATE_DOBJ = 61
+    N_COMMON_INANIMATE_NSUBJPASS = 62
+    N_PROP_DOBJ = 63
+    N_PROP_IOBJ = 64
+    N_PROP_NSUBJ = 65
+    N_PROP_NSUBJPASS = 66
+    N_ON = 67
+    N_IN = 68
+    N_BEDSIDE = 69
+    V_TRANS_OMISSABLE_P1 = 70
+    V_TRANS_OMISSABLE_P2 = 71
+    V_TRANS_OMISSABLE_PP_P1 = 72
+    V_TRANS_OMISSABLE_PP_P2 = 73
+    V_TRANS_NOT_OMISSABLE = 74
+    V_TRANS_NOT_OMISSABLE_PP_P1 = 75
+    V_TRANS_NOT_OMISSABLE_PP_P2 = 76
+    V_CP_TAKING = 77
+    V_INF_TAKING = 78
+    V_UNACC_P1 = 79
+    V_UNACC_P2 = 80
+    V_UNACC_PP_P1 = 81
+    V_UNACC_PP_P2 = 82
+    V_UNERG = 83
+    V_INF = 84
+    V_DAT_P1 = 85
+    V_DAT_P2 = 86
+    V_DAT_PP_P1 = 87
+    V_DAT_PP_P2 = 88
+    V_DAT_PP_P3 = 89
+    V_DAT_PP_P4 = 90
+    PP_IOBJ = 91
+    PP_LOC = 92
+    PP_LOC1 = 93
+    PP_LOC2 = 94
+    PP_LOC3 = 95
+    P_IOBJ = 96
+    P_ON = 97
+    P_IN = 98
+    P_BEDSIDE = 99
+    INF = 100
 
 
 cogs_token_to_type = {
@@ -545,18 +546,27 @@ cogs_token_to_type = {
     "n_on": Cogs_Types.N_ON,
     "n_in": Cogs_Types.N_IN,
     "n_beside": Cogs_Types.N_BEDSIDE,
-    "v_trans_omissible": Cogs_Types.V_TRANS_OMISSABLE,
-    "v_trans_omissible_pp": Cogs_Types.V_TRANS_OMISSABLE_PP,
+    "v_trans_omissible_p1": Cogs_Types.V_TRANS_OMISSABLE_P1,
+    "v_trans_omissible_p2": Cogs_Types.V_TRANS_OMISSABLE_P2,
+    "v_trans_omissible_pp_p1": Cogs_Types.V_TRANS_OMISSABLE_PP_P1,
+    "v_trans_omissible_pp_p2": Cogs_Types.V_TRANS_OMISSABLE_PP_P2,
     "v_trans_not_omissible": Cogs_Types.V_TRANS_NOT_OMISSABLE,
-    "v_trans_not_omissible_pp": Cogs_Types.V_TRANS_NOT_OMISSABLE_PP,
+    "v_trans_not_omissible_pp_p1": Cogs_Types.V_TRANS_NOT_OMISSABLE_PP_P1,
+    "v_trans_not_omissible_pp_p2": Cogs_Types.V_TRANS_NOT_OMISSABLE_PP_P2,
     "v_cp_taking": Cogs_Types.V_CP_TAKING,
     "v_inf_taking": Cogs_Types.V_INF_TAKING,
-    "v_unacc": Cogs_Types.V_UNACC,
-    "v_unacc_pp": Cogs_Types.V_UNACC_PP,
+    "v_unacc_p1": Cogs_Types.V_UNACC_P1,
+    "v_unacc_p2": Cogs_Types.V_UNACC_P2,
+    "v_unacc_pp_p1": Cogs_Types.V_UNACC_PP_P1,
+    "v_unacc_pp_p2": Cogs_Types.V_UNACC_PP_P2,
     "v_unerg": Cogs_Types.V_UNERG,
     "v_inf": Cogs_Types.V_INF,
-    "v_dat": Cogs_Types.V_DAT,
-    "v_dat_pp": Cogs_Types.V_DAT_PP,
+    "v_dat_p1": Cogs_Types.V_DAT_P1,
+    "v_dat_p2": Cogs_Types.V_DAT_P2,
+    "v_dat_pp_p1": Cogs_Types.V_DAT_PP_P1,
+    "v_dat_pp_p2": Cogs_Types.V_DAT_PP_P2,
+    "v_dat_pp_p3": Cogs_Types.V_DAT_PP_P3,
+    "v_dat_pp_p4": Cogs_Types.V_DAT_PP_P4,
     "pp_iobj": Cogs_Types.PP_IOBJ,
     "pp_loc": Cogs_Types.PP_LOC,
     "pp_loc1": Cogs_Types.PP_LOC1,
@@ -567,15 +577,14 @@ cogs_token_to_type = {
     "pin": Cogs_Types.P_IN,
     "pbedside": Cogs_Types.P_BEDSIDE,
     "inf": Cogs_Types.INF,
-    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1,
-    "v_trans_omissible1": Cogs_Types.V_TRANS_OMISSIBLE1
+    "np_animate_dobj_nopp1": Cogs_Types.NP_ANIMATE_DOBJ_NOPP1
 }
 
 exclude_types = ["piobj", "pon", "pin", "pbedside", "det", "c", "aux", "by", "inf",
                  "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
                  "n_common_animate_nsubjpass", "n_common_inanimate_dobj", "n_common_inanimate_nsubjpass",
                  "n_prop_dobj", "n_prop_iobj", "n_prop_nsubj", "n_prop_nsubjpass", "n_on", "n_in",
-                 "n_beside", "start", "vp_external", "v_trans_omissible"]
+                 "n_beside", "start", "vp_external"]
 
 five_span_types = ['vp_passive8', 'vp_passive_dat2']
 
@@ -593,13 +602,14 @@ two_span_types = ['s1', 's2', 's3', 'vp_external1', 'vp_external2', 'vp_external
 one_span_types = ['n_common_animate_dobj', 'n_common_animate_iobj', 'n_common_animate_nsubj', \
                   'n_common_animate_nsubjpass', 'n_common_inanimate_dobj', 'n_common_inanimate_nsubjpass', \
                   'n_prop_dobj', 'n_prop_iobj', 'n_prop_nsubj', 'n_prop_nsubjpass', 'n_on', 'n_in', 'n_beside', \
-                  'v_trans_omissible', 'v_trans_omissible_pp', 'v_trans_not_omissible', 'v_trans_not_omissible_pp', \
-                  'v_cp_taking', 'v_inf_taking', 'v_unacc', 'v_unacc_pp', 'v_unerg', 'v_inf', 'v_dat', 'v_dat_pp', \
+                  'v_trans_omissible_p1', 'v_trans_omissible_p2', 'v_trans_omissible_pp_p1', 'v_trans_omissible_pp_p2', \
+                  'v_trans_not_omissible', 'v_trans_not_omissible_pp_p1', 'v_trans_not_omissible_pp_p2', \
+                  'v_cp_taking', 'v_inf_taking', 'v_unacc_p1', 'v_unacc_p2', 'v_unacc_pp_p1', 'v_unacc_pp_p2', \
+                  'v_unerg', 'v_inf', 'v_dat_p1', 'v_dat_p2', 'v_dat_pp_p1', 'v_dat_pp_p2', 'v_dat_pp_p3', 'v_dat_pp_p4', \
                   'det', 'c', 'aux', 'by', 'piobj', 'pon', 'pin', 'pbedside', 'inf', 'pp_loc', 'np_beside', 'np_in', \
                   'np_on', 'np_inanimate_dobj', 'np_animate_nsubjpass', 'np_animate_nsubj', 'np_animate_iobj', \
                   'np_animate_dobj', 'np_unacc_subj', 'np_dobj', 'vp_passive_dat', 'vp_passive', 'vp_external', \
-                  'np_animate_dobj_nopp', 'v_trans_omissible1']
-
+                  'np_animate_dobj_nopp', 'det', 'start']
 
 def parse_cogs(parser, cogs_command):
     # create parse tree
@@ -632,37 +642,34 @@ def parse_cogs(parser, cogs_command):
         types.append(cogs_token_to_type[node.data.value])
     return positions, types, spans
 
-# initial decoding and variables
-initial_decodings_cogs = {noun : '' for noun in set(noun_list)} |\
-                         {verb : 'y . agent ( y , y ) | y . theme ( y , y ) | y . recipient ( y , y ) | y . ccomp ( y , y ) | y . xcomp ( y , y )'
-                                  for verb in set(verbs_lemmas.keys()).union(set(V_inf))} |\
-                         {'the' : '* y ( y )'} |\
-                         {'a' : 'y ( y )'} |\
-                         {'on' : 'y . nmod . on ( y , y )'} |\
-                         {'in' : 'y . nmod . in ( y , y )'} |\
-                         {'beside' : 'y . nmod . beside ( y , y )'} |\
-                         {word : '' for word in ['that', 'was', 'by', 'to']}
-initial_variables_cogs = {noun : noun for noun in set(noun_list)} | verbs_lemmas | {verb : verb for verb in set(V_inf)}
 
-# copy templates
-copy_temp_cogs = {5 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7], 9 : [0, 1, 5, 6, 7, 8], 10 : [0, 1, 5, 6, 7, 8, 9]},
-                  6 : {5 : [0, 1], 6 : [0, 1, 5], 7 : [0, 1, 5, 6], 8 : [0, 1, 5, 6, 7], 9 : [0, 1, 5, 6, 7, 8], 10 : [0, 1, 5, 6, 7, 8, 9]},
-                  10 : {5 : [0, 1, 2], 6 : [0, 1, 2, 5], 7 : [0, 1, 2, 5, 6], 8 : [0, 1, 2, 5, 6, 7], 9 : [0, 1, 2, 5, 6, 7, 8], 10 : [0, 1, 2, 5, 6, 7, 8, 9]},
-                  11 : {5 : [0, 2, 1], 6 : [0, 2, 1, 5], 7 : [0, 2, 1, 5, 6], 8 : [0, 2, 1, 5, 6, 7], 9 : [0, 2, 1, 5, 6, 7, 8], 10 : [0, 2, 1, 5, 6, 7, 8, 9]},
-                  12 : {5 : [1], 6 : [0, 2]},
-                  14 : {5 : [1]},
-                  15 : {5 : [1, 0], 6 : [1, 0, 5]},
-                  16 : {5 : [1]},
-                  17 : {5 : [1, 0], 6 : [1, 0, 5]},
-                  18 : {5 : [1]},
-                  19 : {5 : [1, 0], 6 : [1, 0, 5]},
-                  20 : {5 : [1, 2], 6 : [1, 2, 5]},
-                  21 : {5 : [1, 2, 0], 6 : [1, 2, 0, 5], 7 : [1, 2, 0, 5, 6]},
-                  23 : {5 : [2, 1], 6 : [2, 1, 5], 7 : [2, 1, 5, 6], 8 : [2, 1, 5, 6, 7], 9 : [2, 1, 5, 6, 7, 8], 10 : [2, 1, 5, 6, 7, 8, 9]},
-                  24 : {5 : [2, 1, 0], 6 : [2, 1, 0, 5], 7 : [2, 1, 0, 5, 6], 8 : [2, 1, 0, 5, 6, 7], 9 : [2, 1, 0, 5, 6, 7, 8], 10 : [2, 1, 0, 5, 6, 7, 8, 9]},
-                  66 : {5 : [0, 1]},
-                  69 : {5 : [0, 3]},
-                  70 : {5 : [0, 4]},
-                  73 : {5 : [0]},
-                  74 : {5 : [0]},
-                  89 : {5 : [0]}}
+# initial decoding and variables
+init_dec_token_cogs = {'the' : '* y ( y )'} |\
+                      {'a' : 'y ( y )'} |\
+                      {'on' : 'y . nmod . on ( y , y )'} |\
+                      {'in' : 'y . nmod . in ( y , y )'} |\
+                      {'beside' : 'y . nmod . beside ( y , y )'}
+
+init_dec_vtype_cogs = {70: 'y . agent ( y , y )',
+                       71: 'y . agent ( y , y ) y . theme ( y , y )',
+                       72: 'y . theme ( y , y )',
+                       73: 'y . theme ( y , y ) y . agent ( y , y )',
+                       74 : 'y . agent ( y , y ) y . theme ( y , y )',
+                       75: 'y . theme ( y , y )',
+                       76: 'y . theme ( y , y ) y . agent ( y , y )',
+                       77: 'y . agent ( y , y ) y . ccomp ( y , y )',
+                       78 : 'y . agent ( y , y ) y . xcomp ( y , y )',
+                       79: 'y . agent ( y , y ) y . theme ( y , y )',
+                       80: 'y . theme ( y , y )',
+                       81: 'y . theme ( y , y )',
+                       82: 'y . theme ( y , y ) y . agent ( y , y )',
+                       83: 'y . agent ( y , y )',
+                       84: 'y . agent ( y , y )',
+                       85 : 'y . agent ( y , y ) y . theme ( y , y ) y . recipient ( y , y )',
+                       86: 'y . agent ( y , y ) y . recipient ( y , y ) y . theme ( y , y )',
+                       87 : 'y . theme ( y , y ) y . recipient ( y , y )',
+                       88 : 'y . theme ( y , y ) y . recipient ( y , y ) y . agent ( y , y )',
+                       89 : 'y . recipient ( y , y ) y . theme ( y , y )',
+                       90 : 'y . recipient ( y , y ) y . theme ( y , y ) y . agent ( y , y )'}
+
+initial_variables_cogs = {noun : noun for noun in set(noun_list)} | verbs_lemmas | {verb : verb for verb in set(V_inf)}

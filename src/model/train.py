@@ -36,8 +36,8 @@ def train(args):
     elif dataset == "COGS":
         train_data, test_data = load_COGS(training_set, dev_set)
         max_x_seq_len = 20
-        max_y_seq_len = 140 # must be divisible by 14
-        hidden_type_dim = 90
+        max_y_seq_len = 160
+        hidden_type_dim = 101
     training_size = int(len(train_data) * args.data_frac)
     train_data = train_data[:training_size]
     logging.info(f"Train scan_data set size: {len(train_data)}")
@@ -57,10 +57,12 @@ def train(args):
 
     curriculum_stage = None
     if args.use_curriculum:
-        # TK DEBUG -- changed from 0
-        curriculum_stage = 2
-        # filter_fn = lambda x: select(x, curriculum_stage)
-        filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
+        if dataset == "SCAN":
+            curriculum_stage = 1
+            filter_fn = lambda x: len(x[0]) <= curriculum_stage
+        elif dataset == "COGS":
+            curriculum_stage = 2
+            filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
         train_data_curriculum = list(filter(filter_fn, train_data))
         #print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
@@ -151,10 +153,6 @@ def train(args):
                     positions, types, spans = parse_cogs(parser, x_tokens[i])
                 else:
                     assert(False)
-                #print('x tokens:', x_tokens[i])
-                #print('positions:', positions)
-                #print('types:', types)
-                #print('spans:', spans)
                 positions_force.append(positions)
                 types_force.append(types)
                 spans_force.append(spans)
@@ -195,35 +193,12 @@ def train(args):
 
         # measure accuracy
         match = torch.eq(expected_padded.float(), outputs_padded.float())
-        #success = torch.eq(match.sum(1), match.size(1)).float()
-        #success = torch.mean(match.float(), -1)
-        #success = torch.cumprod(match.float(), -1).mean(-1)
         match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
 
         # compute cross entropy loss of the decodings against the ground truth
-        # decoding_log = torch.clamp(decoding, min=1e-10, max=1.0).log()
-        # loss = F.cross_entropy(torch.flatten(decoding_log, start_dim=0, end_dim=1), expected_padded.flatten().long())
-        loss = F.cross_entropy(torch.clamp(torch.flatten(decoding, start_dim=0, end_dim=1), min=1.0e-20, max=1.0), expected_padded.flatten().long())
-
-        # compute template loss
-        # dt-all: B x ? x 8 (probs -- verify)
-        # match: B x max_len (49)
-        # success: B
-        # probs, idx: B x ?
-        # use multinomial distribution
-        #B, T, K, _ = dt_all.size()
-        #dt_all_idx = torch.multinomial(torch.softmax(dt_all, -1).view(B * T * K, 3), 1).view(B, T, K)
-        #probs = torch.gather(dt_all, 3, dt_all_idx.unsqueeze(3)).squeeze()
-
-        # dt_all = torch.nn.functional.gumbel_softmax(dt_all, tau=temp, hard=False)
-        # probs, _ = torch.max(dt_all, dim=-1)
-        # log_probs = torch.clamp(probs, min=1.0e-20, max=1.0).log()
-        # B, T, temp_vocab_size = probs.size()
-        # success_per_decoding = success.unsqueeze(1).unsqueeze(2).expand(B, T, temp_vocab_size)
-        # #template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
-        # template_loss = ((success_per_decoding * -log_probs) + (1-success_per_decoding) * log_probs).mean()
+        loss = F.cross_entropy(torch.clamp(torch.flatten(decoding, start_dim=0, end_dim=1), min=1.0e-20, max=1.0),
+                               expected_padded.flatten().long())
         accuracy = torch.tensor(match).mean()
-        # compute loss
         if is_training:
             # zero gradients
             for param in model.parameters():
@@ -245,17 +220,20 @@ def train(args):
     iter_count_stage = 1
     validated = False
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_stage > .6:
+        if args.use_curriculum and train_accuracy_stage > 0.9:
             # record SCAN templates
             if dataset == 'SCAN':
                 if curriculum_stage == 2:
                     for i in [12, 13, 14, 15]:
-                        model.encoder.treelstm_layer.record_template(i, 2)
+                        model.encoder.treelstm_layer.record_template_scan(i, 2)
                 if curriculum_stage == 3:
                     for i in [9, 10, 16, 17, 18, 19]:
-                        model.encoder.treelstm_layer.record_template(i, 3)
+                        model.encoder.treelstm_layer.record_template_scan(i, 3)
             curriculum_stage += 1
-            filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
+            if dataset == "SCAN":
+                filter_fn = lambda x: len(x[0]) <= curriculum_stage
+            elif dataset == "COGS":
+                filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
             train_data_curriculum = list(filter(filter_fn, train_data))
             print(train_data_curriculum)
             print("curriculum size: ", len(train_data_curriculum))
@@ -294,9 +272,9 @@ def train(args):
             train_accuracy_stage_total += train_accuracy
             train_accuracy_stage = train_accuracy_stage_total / (iter_count_stage+1)
 
-            print("iteration loss: %1.4f" %train_loss.item())
+            print("iteration loss:           %1.4f" %train_loss.item())
             print("iteration train accuracy: %1.4f" %train_accuracy.item())
-            print("average train accuracy for the stage: %1.4f" % train_accuracy_stage)
+            print("stage train accuracy:     %1.4f" %train_accuracy_stage)
             # print("worst batch training accuracy for the epoch: %1.4f" % worst_train_accuracy_epoch)
             add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
             add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
@@ -306,11 +284,10 @@ def train(args):
             if (iter_count + 1) % 10 == 0:
                 temp = max(1.0 - train_accuracy_stage, 0.5)
                 model.reset_gumbel_temp(temp)
-            # TK DEBUG
-            print("iter count: ", iter_count)
 
             # validate once for each stage, and once every 500 iterations at stage 6
-            if (not validated and train_accuracy_stage > 0.59) or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
+            if (not validated and train_accuracy_stage > 0.89 and curriculum_stage != 1) \
+                or (curriculum_stage == 6 and iter_count_stage % 500 == 0):
                 validated = True
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
