@@ -59,10 +59,10 @@ def train(args):
     if args.use_curriculum:
         if dataset == "SCAN":
             curriculum_stage = 1
-            filter_fn = lambda x: len(x[0]) <= curriculum_stage
+            filter_fn = lambda x: len(x[0]) == curriculum_stage
         elif dataset == "COGS":
             curriculum_stage = 2
-            filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
+            filter_fn = lambda x: 1 < len(x[0]) == curriculum_stage
         train_data_curriculum = list(filter(filter_fn, train_data))
         #print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
@@ -215,12 +215,12 @@ def train(args):
 
     best_vaild_accuacy = 0
     iter_count = 1
-    train_accuracy_stage_total = 0.0
+    train_accuracy_stage_list = []
     train_accuracy_stage = 0.0
     iter_count_stage = 1
     validated = False
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_stage > 0.9:
+        if args.use_curriculum and train_accuracy_stage >0.98:
             # record SCAN templates
             if dataset == 'SCAN':
                 if curriculum_stage == 2:
@@ -256,7 +256,7 @@ def train(args):
                                         y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                         max_x_seq_len=max_x_seq_len,
                                         max_y_seq_len=max_y_seq_len)
-            train_accuracy_stage_total = 0.0
+            train_accuracy_stage_list = []
             train_accuracy_stage = 0.0
             iter_count_stage = 0
             validated = False
@@ -269,8 +269,11 @@ def train(args):
                                                     average_accuracy=train_accuracy_stage,
                                                     is_training=True,
                                                     verbose=True)
-            train_accuracy_stage_total += train_accuracy
-            train_accuracy_stage = train_accuracy_stage_total / (iter_count_stage+1)
+            train_accuracy_stage_list.append(train_accuracy)
+            if len(train_accuracy_stage_list) == 101:
+                train_accuracy_stage_list = train_accuracy_stage_list[1:]
+            train_accuracy_stage_total = sum(train_accuracy_stage_list)
+            train_accuracy_stage = train_accuracy_stage_total / len(train_accuracy_stage_list)
 
             print("iteration loss:           %1.4f" %train_loss.item())
             print("iteration train accuracy: %1.4f" %train_accuracy.item())
