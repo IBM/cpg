@@ -166,7 +166,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             idx = 0
             for j in range(M):
                 if torch.equal(new_d[i, j], y_vector):
-                    new_d[i, j] = var_sub[idx]
+                    y_idx = new_d[i, j, self.y_vocab.token_to_idx('y')].repeat(V)
+                    new_d[i, j] = torch.mul(var_sub[idx], y_idx)
                     # break if we reach the end of variable list
                     if idx == K-1:
                         break

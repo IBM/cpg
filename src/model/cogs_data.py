@@ -584,7 +584,7 @@ exclude_types = ["piobj", "pon", "pin", "pbedside", "det", "c", "aux", "by", "in
                  "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
                  "n_common_animate_nsubjpass", "n_common_inanimate_dobj", "n_common_inanimate_nsubjpass",
                  "n_prop_dobj", "n_prop_iobj", "n_prop_nsubj", "n_prop_nsubjpass", "n_on", "n_in",
-                 "n_beside", "start", "vp_external"]
+                 "n_beside", "start", "vp_external", "vp_passive"]
 
 five_span_types = ['vp_passive8', 'vp_passive_dat2']
 
