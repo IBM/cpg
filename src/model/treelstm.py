@@ -81,6 +81,8 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                                            embedding_dim=self.hidden_value_dim)
         self.type_embedding.weight.requires_grad = False
         self.templates = nn.ParameterDict()
+        self.templates_current = nn.ParameterDict()
+        self.template_len = 10
         self.dataset = dataset
         self.reset_parameters()
 
@@ -100,13 +102,16 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
             init.constant_(self.comp_linear_v[i].bias.data, val=0)
 
     def record_template_scan(self, type, span):
-        type_embedding = self.type_embedding(torch.tensor(type))
         self.templates[str(type)] = torch.nn.functional.gumbel_softmax(
                                         self.decoder_sem[span-2][type-9](torch.ones(self.hidden_type_dim)).view(8, span+1).log_softmax(-1),
                                         tau=1e-10, hard=True).detach()
         with open('output.txt', 'a') as file:
             file.write('template for type ' + str(type) + ' is: '
                         + str(self.templates[str(type)].argmax(-1)) + '\n')
+    
+    def record_template_cogs(self):
+        self.templates.update(self.templates_current)
+        self.templates_current = nn.ParameterDict()
 
     def apply_decoder_template(self, dt_sample, input_cat, spans):
         # dt_sample - B x K x N
@@ -158,7 +163,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     choices.append(variables[i, n])
             choices = torch.stack(choices, dim=0)
             # get variable list ordered according to the substitution template
-            K = 10 # length of substitution template
+            K = self.template_len
             var_sub = torch.zeros(K, V)
             for k in range(K):
                 var_sub[k] = torch.mm(temp_sub[i, k].unsqueeze(0), choices)
@@ -232,8 +237,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                 target_tokens = [token for token in target_tokens.split(' ') if token != '']
                 for k in range(len(target_tokens)):
                     new_d[i, k] = int_to_one_hot(self.y_vocab.token_to_idx(target_tokens[k]), V)
-            K = 10
-            temp_sub = torch.zeros(B, K, 31)
+            temp_sub = torch.zeros(B, self.template_len, 31)
             for i in range(B):
                 # copy input variables
                 idx = 0
@@ -242,15 +246,24 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                         if not torch.equal(variables[i, j, k], zero_vector):
                             new_v[i, idx] = variables[i, j, k]
                             idx += 1
-                # get substitution templates
-                if target_types[i].item() != 0:
-                    template = self.decoder_sub[target_types[i]](torch.ones(self.hidden_value_dim)).view(K, 31)
+                target_type = target_types[i].item()
+                # get recorded substitution templates
+                if target_type != 0 and str(target_type) in self.templates.keys():
+                    temp_sub[i, :, :idx+1] = self.templates[str(target_type)][:, :idx+1]
+                    # print templates
+                    #if not 69 < target_type < 91 or target_type in [70, 80, 83]:
+                        #print('recorded template for type ' + str(target_type) + ' is ' + str(temp_sub[i, :, :idx+1].argmax(-1)))
+                # get predicted substitution templates
+                elif target_type != 0 and not 69 < target_type < 91 or target_type in [70, 80, 83]:
+                    template = self.decoder_sub[target_type](torch.ones(self.hidden_value_dim)).view(self.template_len, 31)
                     temp_sub[i, :, :idx+1] = torch.nn.functional.gumbel_softmax(
                             template[:, :idx+1].log_softmax(-1), tau=self.gumbel_temperature, hard=True)
-                    # debug
-                    #print('template for type ' + str(target_types[i].item()) + ' is ' + str(temp_sub[i, :, :idx+1].argmax(-1)))
+                    self.templates_current[str(target_type)] = temp_sub[i]
+                    # print templates
+                    #print('template for type ' + str(target_type) + ' is ' + str(temp_sub[i, :, :idx+1].argmax(-1)))
                 else:
-                    temp_sub[i, :, 0] = torch.ones(K)
+                    temp_sub[i, :, 0] = torch.ones(self.template_len)
+            # apply substitution templates
             new_d = self.apply_substitution_template(new_d, new_v, temp_sub)
         return new_d, new_v
 

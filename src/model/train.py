@@ -61,8 +61,8 @@ def train(args):
             curriculum_stage = 1
             filter_fn = lambda x: len(x[0]) == curriculum_stage
         elif dataset == "COGS":
-            curriculum_stage = 2
-            filter_fn = lambda x: 1 < len(x[0]) == curriculum_stage
+            curriculum_stage = 3
+            filter_fn = lambda x: 1 < len(x[0]) <= curriculum_stage
         train_data_curriculum = list(filter(filter_fn, train_data))
         #print(train_data_curriculum)
         preprocessed_train_data = preprocess(train_data_curriculum, x_vocab, y_vocab)
@@ -220,8 +220,8 @@ def train(args):
     iter_count_stage = 1
     validated = False
     for e in range(args.max_epoch):
-        if args.use_curriculum and train_accuracy_stage >0.98:
-            # record SCAN templates
+        if args.use_curriculum and train_accuracy_stage > 0.99:
+            # record templates for SCAN
             if dataset == 'SCAN':
                 if curriculum_stage == 2:
                     for i in [12, 13, 14, 15]:
@@ -229,11 +229,14 @@ def train(args):
                 if curriculum_stage == 3:
                     for i in [9, 10, 16, 17, 18, 19]:
                         model.encoder.treelstm_layer.record_template_scan(i, 3)
-            curriculum_stage += 1
+            # record templates for COGS
+            if dataset == "COGS":
+                model.encoder.treelstm_layer.record_template_cogs()
+            curriculum_stage += 3
             if dataset == "SCAN":
                 filter_fn = lambda x: len(x[0]) == curriculum_stage
             elif dataset == "COGS":
-                filter_fn = lambda x: 1 < len(x[0]) == curriculum_stage
+                filter_fn = lambda x: curriculum_stage-3 < len(x[0]) <= curriculum_stage
             train_data_curriculum = list(filter(filter_fn, train_data))
             print(train_data_curriculum)
             print("curriculum size: ", len(train_data_curriculum))
@@ -270,14 +273,14 @@ def train(args):
                                                     is_training=True,
                                                     verbose=True)
             train_accuracy_stage_list.append(train_accuracy)
-            if len(train_accuracy_stage_list) == 101:
+            if len(train_accuracy_stage_list) == 501:
                 train_accuracy_stage_list = train_accuracy_stage_list[1:]
             train_accuracy_stage_total = sum(train_accuracy_stage_list)
             train_accuracy_stage = train_accuracy_stage_total / len(train_accuracy_stage_list)
 
             print("iteration loss:           %1.4f" %train_loss.item())
             print("iteration train accuracy: %1.4f" %train_accuracy.item())
-            print("stage train accuracy:     %1.4f" %train_accuracy_stage)
+            print("stage train accuracy:     %1.3f" %train_accuracy_stage)
             # print("worst batch training accuracy for the epoch: %1.4f" % worst_train_accuracy_epoch)
             add_scalar_summary(summary_writer=train_summary_writer, name='loss', value=train_loss, step=iter_count)
             add_scalar_summary(summary_writer=train_summary_writer, name='accuracy', value=train_accuracy, step=iter_count)
@@ -286,11 +289,11 @@ def train(args):
             iter_count_stage += 1
             if (iter_count + 1) % 10 == 0:
                 #temp = max(1.0 - train_accuracy_stage, 0.5)
-                temp = max(5.0 - train_accuracy_stage * 5, 0.5)
+                temp = max(10.0 - train_accuracy_stage * 10, 0.5)
                 model.reset_gumbel_temp(temp)
 
             # validate once for each stage
-            if (not validated and train_accuracy_stage > 0.89 and curriculum_stage != 1):
+            if (not validated and train_accuracy_stage > 0.95 and curriculum_stage != 1):
                 validated = True
                 valid_loss_sum = valid_accuracy_sum = 0
                 num_valid_batches = valid_loader.num_batches
