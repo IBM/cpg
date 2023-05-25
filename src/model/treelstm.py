@@ -268,9 +268,7 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     self.template_type_len[target_type] = type_idx
                 # compute offset
                 diff = [t_current - t_original for (t_current, t_original) in zip(type_idx, self.template_type_len[target_type])]
-                offset = [0]
-                for s in range(spans[i] - 1):
-                    offset.append(sum(diff[0:s+1]))
+                offset = [0] + diff[:-1]
                 idx = self.template_type_len[target_type][-1]
                 # get recorded substitution templates
                 if str(target_type) in self.templates.keys():
