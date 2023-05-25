@@ -9,7 +9,7 @@ from src.model import basic
 import numpy as np
 from src.model.scan_data import ScanTypes
 from src.model.scan_data import initial_decodings_scan
-from src.model.cogs_data import init_dec_token_cogs, init_dec_vtype_cogs, initial_variables_cogs
+from src.model.cogs_data import init_dec_token_cogs, init_dec_vtype_cogs, initial_variables_cogs, proper_nouns
 from src.model.data import int_to_one_hot
 
 
@@ -82,8 +82,11 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.type_embedding.weight.requires_grad = False
         self.templates = nn.ParameterDict()
         self.templates_current = nn.ParameterDict()
-        self.template_len = 10
+        self.template_len = 15
         self.dataset = dataset
+        self.gumbel_temperatures = [10.0 for i in range(hidden_type_dim)]
+        self.predict_zero = False
+        self.template_type_len = {}
         self.reset_parameters()
 
     def reset_gumbel_temp(self, new_temp):
@@ -95,6 +98,9 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         if verbose:
             print(f'Gumbel temp lowered from {self.gumbel_temperature:g} to {new_temp:g}')
         self.gumbel_temperature = new_temp
+    
+    def set_predict_zero(self, b):
+        self.predict_zero = b
 
     def reset_parameters(self):
         for i in range(self.hidden_type_dim - 9):
@@ -239,30 +245,62 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
                     new_d[i, k] = int_to_one_hot(self.y_vocab.token_to_idx(target_tokens[k]), V)
             temp_sub = torch.zeros(B, self.template_len, 31)
             for i in range(B):
+                target_type = target_types[i].item()
                 # copy input variables
-                idx = 0
+                var_idx = 0
+                type_idx = []
                 for j in range(N):
+                    type_idx.append(0)
                     for k in range(30):
                         if not torch.equal(variables[i, j, k], zero_vector):
-                            new_v[i, idx] = variables[i, j, k]
-                            idx += 1
-                target_type = target_types[i].item()
+                            new_v[i, var_idx] = variables[i, j, k]
+                            var_idx += 1
+                            type_idx[-1] += 1
+                # skip substitution process for padding and some verbs
+                if target_type == 0 or (69 < target_type < 91 and target_type not in [70, 80, 83]):
+                    temp_sub[i, :, 0] = torch.ones(self.template_len)
+                    continue
+                # compute the number of variables for each input type, including those from preceding input types
+                for s in range(spans[i]-1):
+                    type_idx[s+1] = type_idx[s] + type_idx[s+1]
+                # save the number of variables from each input type
+                if target_type not in self.template_type_len.keys():
+                    self.template_type_len[target_type] = type_idx
+                # compute offset
+                diff = [t_current - t_original for (t_current, t_original) in zip(type_idx, self.template_type_len[target_type])]
+                offset = [0]
+                for s in range(spans[i] - 1):
+                    offset.append(sum(diff[0:s+1]))
+                idx = self.template_type_len[target_type][-1]
                 # get recorded substitution templates
-                if target_type != 0 and str(target_type) in self.templates.keys():
+                if str(target_type) in self.templates.keys():
                     temp_sub[i, :, :idx+1] = self.templates[str(target_type)][:, :idx+1]
                     # print templates
                     #if not 69 < target_type < 91 or target_type in [70, 80, 83]:
                         #print('recorded template for type ' + str(target_type) + ' is ' + str(temp_sub[i, :, :idx+1].argmax(-1)))
                 # get predicted substitution templates
-                elif target_type != 0 and not 69 < target_type < 91 or target_type in [70, 80, 83]:
+                else:
                     template = self.decoder_sub[target_type](torch.ones(self.hidden_value_dim)).view(self.template_len, 31)
+                    if not self.predict_zero:
+                        template[:, 0] = torch.ones(self.template_len).mul(-float("Inf"))
                     temp_sub[i, :, :idx+1] = torch.nn.functional.gumbel_softmax(
                             template[:, :idx+1].log_softmax(-1), tau=self.gumbel_temperature, hard=True)
                     self.templates_current[str(target_type)] = temp_sub[i]
                     # print templates
                     #print('template for type ' + str(target_type) + ' is ' + str(temp_sub[i, :, :idx+1].argmax(-1)))
-                else:
-                    temp_sub[i, :, 0] = torch.ones(self.template_len)
+                # apply offset
+                if any(offset):
+                    #print('applying offset ' + str(offset) + ' to type ' + str(target_type))
+                    for s in range(spans[i]):
+                        if not offset[s] or s == 0:
+                            continue
+                        temp_sub_idx = torch.argmax(temp_sub[i], -1)
+                        for k in range(15):
+                            temp_idx = temp_sub_idx[k].item()
+                            if self.template_type_len[target_type][s-1]+1 <= temp_idx < self.template_type_len[target_type][s]+1:
+                                temp_sub[i, k, temp_idx+offset[s]] = temp_sub[i, k, temp_idx]
+                                temp_sub[i, k, temp_idx] = 0.
+                    #print('after offset, template for type ' + str(target_type) + ' is ' + str(temp_sub[i, :, :var_idx+1].argmax(-1)))
             # apply substitution templates
             new_d = self.apply_substitution_template(new_d, new_v, temp_sub)
         return new_d, new_v
@@ -408,10 +446,15 @@ class TypedBinaryTreeLSTM(nn.Module):
                 else:
                     target_tokens = ''
                 # get initial variables
-                initial_variables[i, j, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
                 if input_token in initial_variables_cogs.keys():
                     target_variable = initial_variables_cogs[input_token]
-                    initial_variables[i, j, 1, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_variable), V)
+                    # switch order of variable and constant for proper nouns
+                    if input_token in proper_nouns:
+                        initial_variables[i, j, 1, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
+                        initial_variables[i, j, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_variable), V)
+                    else:
+                        initial_variables[i, j, 0, :] = int_to_one_hot(self.y_vocab.token_to_idx(str(j)), V)
+                        initial_variables[i, j, 1, :] = int_to_one_hot(self.y_vocab.token_to_idx(target_variable), V)
                 # get initial decodings for non-verb tokens
                 target_tokens = [token for token in target_tokens.split(' ') if token != '']
                 for k in range(len(target_tokens)):

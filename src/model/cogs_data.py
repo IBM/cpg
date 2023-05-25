@@ -246,11 +246,12 @@ def quote(l):
     return map(lambda x: "\"" + x + "\"", l)
 
 cogs_grammar = """
-    start: s1 | s2 | s3 | vp_internal
+    start: s1 | s2 | s3 | s4 | vp_internal
     s1: np_animate_nsubj vp_external
     s2: np_inanimate_nsubjpass vp_passive
     s3: np_animate_nsubjpass vp_passive_dat
-    vp_external: v_unerg | v_trans_omissible_p1 | vp_external1 | vp_external2 | vp_external3 | vp_external4 | vp_external5 | vp_external6 | vp_external7
+    s4: np_animate_nsubj vp_external4
+    vp_external: v_unerg | v_trans_omissible_p1 | vp_external1 | vp_external2 | vp_external3 | vp_external5 | vp_external6 | vp_external7
     vp_external1: v_unacc_p1 np_dobj
     vp_external2: v_trans_omissible_p2 np_dobj
     vp_external3: v_trans_not_omissible np_dobj
@@ -474,6 +475,7 @@ class Cogs_Types(IntEnum):
     P_IN = 98
     P_BEDSIDE = 99
     INF = 100
+    S4 = 101
 
 
 cogs_token_to_type = {
@@ -481,6 +483,7 @@ cogs_token_to_type = {
     "s1": Cogs_Types.S1,
     "s2": Cogs_Types.S2,
     "s3": Cogs_Types.S3,
+    "s4": Cogs_Types.S4,
     "vp_external": Cogs_Types.VP_EXTERNAL,
     "vp_external1": Cogs_Types.VP_EXTERNAL1,
     "vp_external2": Cogs_Types.VP_EXTERNAL2,
@@ -595,7 +598,7 @@ four_span_types = ['vp_passive2', 'vp_passive4', 'vp_passive6']
 three_span_types = ['vp_external4', 'vp_external5', 'vp_external6', 'vp_external7', 'vp_passive7', \
                     'vp_passive_dat1', 'np_animate_dobj2', 'np_inanimate_dobj2', 'np_on1', 'np_in1', 'np_bedside1']
 
-two_span_types = ['s1', 's2', 's3', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal', \
+two_span_types = ['s1', 's2', 's3', 's4', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal', \
                   'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_animate_dobj1', 'np_animate_iobj1', \
                   'np_animate_nsubj1', 'np_inanimate_dobj1', 'np_inanimate_dobj_nopp', 'np_inanimate_nsubjpass', \
                   'np_on2', 'np_in2', 'np_bedside2', 'pp_iobj', 'pp_loc1', 'pp_loc2', 'pp_loc3', \
