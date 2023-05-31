@@ -106,7 +106,8 @@ def train(args):
                                  max_y_seq_len=max_y_seq_len,
                                  use_prim_type_oracle=args.use_prim_type_oracle,
                                  syntactic_supervision=args.syntactic_supervision,
-                                 dataset=dataset)
+                                 dataset=dataset,
+                                 eval=False)
     if args.pretrained:
         model.embedding.weight.data.set_(y_vocab.vectors)
     if args.fix_word_embedding:
@@ -126,7 +127,6 @@ def train(args):
     scheduler = lr_scheduler.ReduceLROnPlateau(
         optimizer=optimizer, mode='max', factor=0.5,
         patience=20 * args.halve_lr_every, verbose=True)
-    criterion = nn.CrossEntropyLoss()
 
     train_summary_writer = SummaryWriter(
         log_dir=os.path.join(args.save_dir, 'log', 'train'))

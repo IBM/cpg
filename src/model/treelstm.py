@@ -60,7 +60,7 @@ class TypePredictor(nn.Module):
 
 class TypedBinaryTreeLSTMLayer(nn.Module):
     def __init__(self, hidden_value_dim, hidden_type_dim, type_predictor, binary_type_predictor,
-                 max_seq_len, decoder_sem, decoder_init, decoder_sub, y_vocab, gumbel_temperature, dataset):
+                 max_seq_len, decoder_sem, decoder_init, decoder_sub, y_vocab, gumbel_temperature, dataset, eval):
         super(TypedBinaryTreeLSTMLayer, self).__init__()
         self.hidden_value_dim = hidden_value_dim
         self.hidden_type_dim = hidden_type_dim
@@ -80,7 +80,13 @@ class TypedBinaryTreeLSTMLayer(nn.Module):
         self.type_embedding = nn.Embedding(num_embeddings=self.hidden_type_dim,
                                            embedding_dim=self.hidden_value_dim)
         self.type_embedding.weight.requires_grad = False
-        self.templates = nn.ParameterDict()
+        self.eval = eval
+        if self.eval:
+            self.templates = nn.ParameterDict({str(i) : nn.Parameter(torch.randn(15, 31)) for i in [6, 2, 70, 36, 80, 42, \
+                            13, 83, 8, 29, 7, 31, 9, 101, 91, 21, 43, 3, 40, 12, 17, 16, 18, 20, 24, 4, 10, 15, 19, 34, \
+                            38, 11, 22, 52, 95, 41, 46, 93, 49, 94, 32, 25, 45, 51, 48]})
+        else:
+            self.templates = nn.ParameterDict()
         self.templates_current = nn.ParameterDict()
         self.template_len = 15
         self.dataset = dataset
@@ -308,7 +314,7 @@ class TypedBinaryTreeLSTM(nn.Module):
 
     def __init__(self, word_dim, hidden_value_dim, hidden_type_dim, use_leaf_rnn, intra_attention,
                  gumbel_temperature, bidirectional, max_seq_len, decoder_sem, decoder_init, decoder_sub, x_vocab,
-                 y_vocab, dataset, is_lstm=False, scan_token_to_type_map=None, input_tokens=None, positions_force=None,
+                 y_vocab, dataset, eval, is_lstm=False, scan_token_to_type_map=None, input_tokens=None, positions_force=None,
                  types_force=None):
         super(TypedBinaryTreeLSTM, self).__init__()
         self.word_dim = word_dim
@@ -357,7 +363,8 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                            self.decoder_sub,
                                                            self.y_vocab,
                                                            self.gumbel_temperature,
-                                                           self.dataset)
+                                                           self.dataset,
+                                                           eval)
             self.comp_query = nn.Parameter(torch.FloatTensor(2 * (hidden_value_dim + hidden_type_dim)))
         else:
             self.treelstm_layer = TypedBinaryTreeLSTMLayer(hidden_value_dim, hidden_type_dim,
@@ -369,7 +376,8 @@ class TypedBinaryTreeLSTM(nn.Module):
                                                            self.decoder_sub,
                                                            self.y_vocab,
                                                            self.gumbel_temperature,
-                                                           self.dataset)
+                                                           self.dataset,
+                                                           eval)
             self.comp_query = nn.Parameter(torch.FloatTensor(hidden_value_dim + hidden_type_dim))
 
         self.reset_parameters()

@@ -190,7 +190,7 @@ class CompositionalLearner(nn.Module):
     def __init__(self, model, y_vocab, x_vocab, word_dim, hidden_value_dim, hidden_type_dim,
                  decoder_hidden_dim, decoder_num_layers, use_leaf_rnn, bidirectional,
                  intra_attention, use_batchnorm, dropout_prob, max_y_seq_len, use_prim_type_oracle,
-                 syntactic_supervision, dataset):
+                 syntactic_supervision, dataset, eval):
         super(CompositionalLearner, self).__init__()
         self.model = model
         self.num_classes = len(y_vocab)
@@ -258,7 +258,8 @@ class CompositionalLearner(nn.Module):
                                            y_vocab=self.y_vocab,
                                            dataset=dataset,
                                            is_lstm=model == 'lstm',
-                                           scan_token_to_type_map=self.scan_token_to_type_map)
+                                           scan_token_to_type_map=self.scan_token_to_type_map,
+                                           eval=eval)
         self.lstm_encoder = nn.LSTM(len(self.x_vocab), self.hidden_value_dim, batch_first=True)
         self.dataset = dataset
         self.reset_parameters()
