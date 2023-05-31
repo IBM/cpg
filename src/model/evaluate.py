@@ -39,8 +39,7 @@ def evaluate(args):
         max_x_seq_len = 20
         max_y_seq_len = 160
         hidden_type_dim = 102
-    training_size = int(len(train_data) * args.data_frac)
-    train_data = train_data[:training_size]
+    test_data.sort(key=lambda x:len(x[0]))
     logging.info(f"Train scan_data set size: {len(train_data)}")
     logging.info(f"Train scan_data sample:\n\tx: {train_data[0][0]}\n\ty: {train_data[0][1]}")
     logging.info(f"Test scan_data set size: {len(test_data)}")
@@ -60,7 +59,7 @@ def evaluate(args):
 
     test_loader = MyDataLoader(preprocessed_test_data,
                                 batch_size=args.batch_size,
-                                shuffle=True,
+                                shuffle=False,
                                 x_pad_idx=x_vocab.token_to_idx('<PAD>'),
                                 y_pad_idx=y_vocab.token_to_idx('<PAD>'),
                                 max_x_seq_len=max_x_seq_len,
