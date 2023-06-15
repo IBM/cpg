@@ -1,141 +1,226 @@
 """Basic or helper implementation."""
 
+import os
+import urllib
+from dataclasses import dataclass, field
+from typing import Dict
+import numpy as np
+
 import torch
 from torch import nn
-from torch.nn import functional
+from torch.nn import functional as F
+from torch.nn.utils import clip_grad_norm_
 
 
-def convert_to_one_hot(indices, num_classes):
-    """
-    Args:
-        indices (tensor): A vector containing indices,
-            whose size is (batch_size,).
-        num_classes (tensor): The number of classes, which would be
-            the second dimension of the resulting one-hot matrix.
+class FeedForward(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim):
+        super().__init__()
+        dims = [input_dim] + hidden_dims + [output_dim]
+        self.layers = nn.ModuleList()
+        for in_d, out_d in zip(dims[:-1], dims[1:]):
+            self.layers.append(nn.Linear(in_d, out_d))
 
-    Returns:
-        result: The one-hot matrix of size (batch_size, num_classes).
-    """
-
-    batch_size = indices.size(0)
-    indices = indices.unsqueeze(1)
-    one_hot = indices.new_zeros(batch_size, num_classes).scatter_(1, indices, 1)
-    return one_hot
+    def forward(self, x):
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
+            if i != len(self.layers) - 1:
+                x = F.relu(x)
+        return x
 
 
-def masked_softmax(logits, mask=None):
-    eps = 1e-20
-    probs = functional.softmax(logits, dim=1)
-    if mask is not None:
-        mask = mask.float()
-        probs = probs * mask + eps
-        probs = probs / probs.sum(1, keepdim=True)
-    return probs
+def int_to_one_hot(x, size):
+    result = torch.tensor([0 for _ in range(size)])
+    result[x] = 1
+    return result
 
 
-def greedy_select(logits, mask=None):
-    probs = masked_softmax(logits=logits, mask=mask)
-    one_hot = convert_to_one_hot(indices=probs.max(1)[1],
-                                 num_classes=logits.size(1))
-    return one_hot
+def download_file(url, filepath, verbose=False):
+    if verbose:
+        print(f"Downloading \"{url}\" to \"{filepath}\"...")
 
-def st_gumbel_softmax(logits, temperature=1.0, mask=None):
-    """
-    Return the result of Straight-Through Gumbel-Softmax Estimation.
-    It approximates the discrete sampling via Gumbel-Softmax trick
-    and applies the biased ST estimator.
-    In the forward propagation, it emits the discrete one-hot result,
-    and in the backward propagation it approximates the categorical
-    distribution via smooth Gumbel-Softmax distribution.
+    # create directory structure if it doesn't exist
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-    Args:
-        logits (tensor): A un-normalized probability values,
-            which has the size (batch_size, num_classes)
-        temperature (float): A temperature parameter. The higher
-            the value is, the smoother the distribution is.
-        mask (tensor, optional): If given, it masks the softmax
-            so that indices of '0' mask values are not selected.
-            The size is (batch_size, num_classes).
+    # create file to download to if it doesn't exist
+    try:
+        open(filepath, 'a').close()
+    except OSError:
+        print(f"Cannot download \"{url}\" to \"{filepath}\" because the target file cannot be opened or created")
+    urllib.request.urlretrieve(url, filepath)
 
-    Returns:
-        y: The sampled output, which has the property explained above.
-    """
+@dataclass
+class Vocabulary:
+    _token_to_idx: Dict[str, int] = field(default_factory=dict)
+    _idx_to_token: Dict[str, int] = field(default_factory=dict)
+    _token_to_tensor: Dict[str, int] = field(default_factory=dict)
 
-    eps = 1e-20
-    u = logits.data.new(*logits.size()).uniform_()
-    gumbel_noise = -torch.log(-torch.log(u + eps) + eps)
-    y = logits + gumbel_noise
-    y = masked_softmax(logits=y / temperature, mask=mask)
-    y_argmax = y.max(1)[1]
-    y_hard = convert_to_one_hot(indices=y_argmax, num_classes=y.size(1)).float()
-    y = (y_hard - y).detach() + y
-    return y
+    def add_token(self, token):
+        if token not in self._token_to_idx:
+            idx = len(self._token_to_idx)
+            self._token_to_idx[token] = idx
+            self._idx_to_token[idx] = token
+            self._token_to_tensor[token] = torch.tensor(idx)
+
+    def contains_token(self, token):
+        return token in self._token_to_idx
+
+    def add_tokens(self, tokens):
+        for token in tokens:
+            self.add_token(token)
+
+    def __len__(self):
+        return self.size()
+
+    def size(self):
+        return len(self._token_to_idx)
+
+    def token_to_idx(self, token):
+        return self._token_to_idx.get(token, self._token_to_idx['<UNK>'])
+
+    def idx_to_token(self, idx):
+        return self._idx_to_token[idx]
+
+    def token_to_tensor(self, token):
+        return self._token_to_tensor.get(token, self._token_to_tensor['<UNK>'])
+
+    def token_to_ohe(self, token):
+        return torch.nn.functional.one_hot(self._token_to_tensor[token], len(self)).long()
+
+    def encode(self, x):
+        return [self.token_to_idx(token) for token in x]
+
+    def decode(self, x):
+        return [self.idx_to_token(idx) for idx in x]
+
+    def decode_batch(self, X: np.ndarray, mask: np.ndarray = None):
+        if mask is None:
+            mask = np.ones_like(X)
+        return [self.decode(x[:m]) for x, m in zip(X, mask.sum(axis=1))]
 
 
-def sequence_mask(sequence_length, max_length=None):
-    if max_length is None:
-        max_length = sequence_length.data.max()
-    batch_size = sequence_length.size(0)
-    seq_range = torch.arange(0, max_length).long()
-    seq_range_expand = seq_range.unsqueeze(0).expand(batch_size, max_length)
-    seq_range_expand = seq_range_expand.to(sequence_length)
-    seq_length_expand = sequence_length.unsqueeze(1).expand_as(seq_range_expand)
-    return seq_range_expand < seq_length_expand
+def build_vocab(data, base_tokens=[]):
+    vocab = Vocabulary()
+    vocab.add_tokens(base_tokens)
+
+    for sequence in data:
+        for token in sequence:
+            vocab.add_token(token)
+
+    return vocab
 
 
-def reverse_padded_sequence(inputs, lengths, batch_first=False):
-    """Reverses sequences according to their lengths.
-    Inputs should have size ``T x B x *`` if ``batch_first`` is False, or
-    ``B x T x *`` if True. T is the length of the longest sequence (or larger),
-    B is the batch size, and * is any number of dimensions (including 0).
-    Arguments:
-        inputs (tensor): padded batch of variable length sequences.
-        lengths (list[int]): list of sequence lengths
-        batch_first (bool, optional): if True, inputs should be B x T x *.
-    Returns:
-        A tensor with the same size as inputs, but with each sequence
-        reversed according to its length.
-    """
+class MyDataLoader:
+    def __init__(self, data, batch_size, shuffle=True, sort_by_len=False, x_pad_idx=0, y_pad_idx=0,
+                 max_x_seq_len=128, max_y_seq_len=128, max_sentence_len=torch.inf):
+        self.data = data
+        self.batch_size = batch_size
+        self.num_batches = 0
+        self.iterations = 0
+        self.max_sentence_len = max_sentence_len
 
-    if not batch_first:
-        inputs = inputs.transpose(0, 1)
-    if inputs.size(0) != len(lengths):
-        raise ValueError('inputs incompatible with lengths.')
-    reversed_indices = [list(range(inputs.size(1)))
-                        for _ in range(inputs.size(0))]
-    for i, length in enumerate(lengths):
-        if length > 0:
-            reversed_indices[i][:length] = reversed_indices[i][length-1::-1]
-    reversed_indices = (torch.LongTensor(reversed_indices).unsqueeze(2)
-                        .expand_as(inputs))
-    reversed_indices = reversed_indices.to(inputs)
-    reversed_inputs = torch.gather(inputs, 1, reversed_indices)
-    if not batch_first:
-        reversed_inputs = reversed_inputs.transpose(0, 1)
-    return reversed_inputs
+        if shuffle:
+            np.random.shuffle(self.data)
+        if sort_by_len:
+            self.data.sort(key=lambda x: len(x[0]))
+        if self.max_sentence_len != torch.inf:
+            self.data = list(filter(lambda x: len(x[0]) <= self.max_sentence_len and len(x[1]) <= self.max_sentence_len,
+                               self.data))
+        self.batches = list(self.make_batches(self.data, batch_size, x_pad_idx, y_pad_idx, max_x_seq_len, max_y_seq_len))
 
-def splice_in_types(batch, positions, types, span_size):
-    # helpful: https://stackoverflow.com/questions/55881002/pytorch-tensor-indexing-how-to-gather-rows-by-tensor-containing-indices
-    # torch.gather: https://pytorch.org/docs/stable/generated/torch.gather.html
+    def __iter__(self):
+        for batch in self.batches:
+            yield batch
 
-    B, L, T = batch.shape
-    new_L = L + 1 - span_size
+    def make_batches(self, data, batch_size, x_pad_idx, y_pad_idx, max_x_seq_len, max_y_seq_len, drop_last=False):
+        num_batches = int(len(data) / batch_size) + int(~drop_last and len(data) % batch_size != 0)
+        self.num_batches = num_batches
+        for i in range(num_batches):
+            batch = data[i * batch_size: (i + 1) * batch_size]
+            X, Y = list(zip(*batch))
+            X_tensor = self.make_batch(X, max_x_seq_len, x_pad_idx)
+            Y_tensor = self.make_batch(Y, max_y_seq_len, y_pad_idx)
+            yield X_tensor, Y_tensor
 
-    # build index matrices for forward shift
-    shifts_fwd = positions.unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(1).repeat_interleave(L, dim=1)
-    arange_fwd = torch.arange(L).unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(0).repeat_interleave(B, dim=0)
-    idxs_fwd = (arange_fwd + shifts_fwd) % L
+    def make_batch(self, data, max_seq_len, pad_idx):
+        seq_len = max(max_seq_len, max(len(x) for x in data))
+        batch = torch.full((len(data), seq_len), pad_idx, dtype=torch.long)
+        for i, x in enumerate(data):
+            batch[i, :len(x)] = torch.tensor(x, dtype=torch.long)
+        return batch
 
-    # shift forward
-    batch_shifted = torch.gather(batch, 1, idxs_fwd)
-    spliced_shifted = torch.concat((types.unsqueeze(1), batch_shifted[:, span_size:, :]), dim=1)
+    def get_full_data(self, max_x_vocab, max_y_vocab):
+        X = torch.concat([torch.nn.functional.one_hot(i[0], num_classes=max_x_vocab).float() for i in self.batches],
+                         dim=0)
+        Y = torch.concat([torch.nn.functional.one_hot(i[1], num_classes=max_y_vocab).float() for i in self.batches],
+                         dim=0)
+        return X, Y
+    
+def run_iter(model, batch, params=None, optimizer=None, is_training=False, verbose=False, print_error=False):
+    batch_x, batch_y = batch
+    B = batch_x.size(0)
+    x_vocab = model.dataset.x_vocab
+    y_vocab = model.dataset.y_vocab
 
-    # build index matrices for backward shift
-    shifts_back = positions.unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(1).repeat_interleave(new_L, dim=1)
-    arange_back = torch.arange(new_L).unsqueeze(1).repeat_interleave(T, dim=1).unsqueeze(0).repeat_interleave(B, dim=0)
-    idxs_back = (arange_back - shifts_back) % (new_L)
+    x_tokens = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
+    for i in range(len(x_tokens)):
+        x_tokens[i] = " ".join(x_tokens[i])
+    
+    positions = []
+    types = []
+    spans = []
+    for i in range(B):
+        p, t, s = model.dataset.parse(x_tokens[i])
+        positions.append(p)
+        types.append(t)
+        spans.append(s)
+    
+    decoding = model(batch_x, positions, types, spans)
+    decoding_idx = decoding.argmax(-1)
+    
+    N = decoding.size(1)
+    M = batch_y.size(1)
+    if N >= M:
+        # pad expected output
+        expected_padded = torch.full((B, N), float(model.dataset.y_vocab.token_to_idx('<PAD>')))
+        expected_padded[:, :M] = batch_y
+        outputs_padded = decoding_idx
+    else:
+        # pad decoded output
+        expected_padded = batch_y
+        outputs_padded = torch.full((B, M), float(y_vocab.token_to_idx('<PAD>')))
+        outputs_padded[:, :N] = decoding_idx
 
-    # shift backward
-    spliced = torch.gather(spliced_shifted, 1, idxs_back)
+    match = torch.eq(expected_padded.float(), outputs_padded.float())
+    match = [(match[i].sum() == match.size(1)).float() for i in range(match.size(0))]
+    loss = F.cross_entropy(torch.clamp(torch.flatten(decoding, start_dim=0, end_dim=1), min=1.0e-10, max=1.0),
+                            expected_padded.flatten().long())
+    accuracy = torch.tensor(match).mean()
 
-    return spliced
+    if verbose or (print_error and accuracy != 1.):
+        input = x_vocab.decode_batch(batch_x.numpy(), batch_x != x_vocab.token_to_idx('<PAD>'))
+        expected = y_vocab.decode_batch(batch_y.numpy(), batch_y != y_vocab.token_to_idx('<PAD>'))
+        decoded = y_vocab.decode_batch(decoding_idx.numpy(), decoding_idx != y_vocab.token_to_idx('<PAD>'))
+        print("--------------------------------")
+        for i in range(B):
+            print("input: ", " ".join(input[i]), "\n")
+            print("expected: ", " ".join(expected[i]), "\n")
+            print("decoded: ", " ".join(decoded[i]))
+            print("--------------------------------")
+
+    if is_training:
+        # zero gradients
+        for param in model.parameters():
+            param.grad = None
+        loss.backward()
+        clip_grad_norm_(parameters=params, max_norm=5)
+        optimizer.step()
+    return loss, accuracy
+
+def add_scalar_summary(summary_writer, name, value, step):
+    if torch.is_tensor(value):
+        value = value.item()
+    summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
+
+
+def quote(l):
+    return map(lambda x: "\"" + x + "\"", l)
