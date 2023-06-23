@@ -19,7 +19,7 @@ class COGSDataset(nn.Module):
         self.max_span = 5
         self.sub_template_len = 15
         self.term_list_len = 80
-        self.type_dim = 102
+        self.type_dim = 62
         self.max_x_seq_len = 20
         self.max_y_seq_len = 160
         self.predict_zero = True
@@ -37,27 +37,27 @@ class COGSDataset(nn.Module):
                                            {'in' : 'y . nmod . in ( y , y )'} |\
                                            {'beside' : 'y . nmod . beside ( y , y )'}
         
-        self.initial_decodings_vtype = {70: 'y . agent ( y , y )',
-                                        71: 'y . agent ( y , y ) y . theme ( y , y )',
-                                        72: 'y . theme ( y , y )',
-                                        73: 'y . theme ( y , y ) y . agent ( y , y )',
-                                        74 : 'y . agent ( y , y ) y . theme ( y , y )',
-                                        75: 'y . theme ( y , y )',
-                                        76: 'y . theme ( y , y ) y . agent ( y , y )',
-                                        77: 'y . agent ( y , y ) y . ccomp ( y , y )',
-                                        78 : 'y . agent ( y , y ) y . xcomp ( y , y )',
-                                        79: 'y . agent ( y , y ) y . theme ( y , y )',
-                                        80: 'y . theme ( y , y )',
-                                        81: 'y . theme ( y , y )',
-                                        82: 'y . theme ( y , y ) y . agent ( y , y )',
-                                        83: 'y . agent ( y , y )',
-                                        84: 'y . agent ( y , y )',
-                                        85 : 'y . agent ( y , y ) y . theme ( y , y ) y . recipient ( y , y )',
-                                        86: 'y . agent ( y , y ) y . recipient ( y , y ) y . theme ( y , y )',
-                                        87 : 'y . theme ( y , y ) y . recipient ( y , y )',
-                                        88 : 'y . theme ( y , y ) y . recipient ( y , y ) y . agent ( y , y )',
-                                        89 : 'y . recipient ( y , y ) y . theme ( y , y )',
-                                        90 : 'y . recipient ( y , y ) y . theme ( y , y ) y . agent ( y , y )'}
+        self.initial_decodings_vtype = {41: 'y . agent ( y , y )',
+                                        42: 'y . agent ( y , y ) y . theme ( y , y )',
+                                        43: 'y . theme ( y , y )',
+                                        44: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        45: 'y . agent ( y , y ) y . theme ( y , y )',
+                                        46: 'y . theme ( y , y )',
+                                        47: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        48: 'y . agent ( y , y ) y . ccomp ( y , y )',
+                                        49: 'y . agent ( y , y ) y . xcomp ( y , y )',
+                                        50: 'y . agent ( y , y ) y . theme ( y , y )',
+                                        51: 'y . theme ( y , y )',
+                                        52: 'y . theme ( y , y )',
+                                        53: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        54: 'y . agent ( y , y )',
+                                        55: 'y . agent ( y , y )',
+                                        56: 'y . agent ( y , y ) y . theme ( y , y ) y . recipient ( y , y )',
+                                        57: 'y . agent ( y , y ) y . recipient ( y , y ) y . theme ( y , y )',
+                                        58: 'y . theme ( y , y ) y . recipient ( y , y )',
+                                        59: 'y . theme ( y , y ) y . recipient ( y , y ) y . agent ( y , y )',
+                                        60: 'y . recipient ( y , y ) y . theme ( y , y )',
+                                        61: 'y . recipient ( y , y ) y . theme ( y , y ) y . agent ( y , y )'}
         
         self.initial_terms = {noun : noun for noun in set(noun_list)} | verbs_lemmas | {verb : verb for verb in set(V_inf)}
 
@@ -178,7 +178,7 @@ class COGSDataset(nn.Module):
         for i in range(B):
             new_type = new_types[i].item()
             # skip substitution process for padding and some verbs
-            if new_type == 0 or (69 < new_type < 91 and new_type not in [70, 80, 83]):
+            if new_type == 0 or (40 < new_type < 62 and new_type not in [41, 51, 54]):
                 template_sub[i] = torch.zeros(self.sub_template_len, self.term_list_len+1)
                 template_sub[i, :, 0] = torch.ones(self.sub_template_len)
         
@@ -395,6 +395,7 @@ V_trans_omissible = [
     'called', 'heard', 'packed', 'saw', 'noticed',
     'studied', 'examined', 'observed', 'knew', 'investigated', 'baked'
 ]
+
 V_trans_omissible_pp = [
     'eaten', 'painted', 'drawn', 'cleaned', 'cooked',
     'dusted', 'hunted', 'nursed', 'sketched', 'juggled',
@@ -408,6 +409,7 @@ V_trans_not_omissible = [
     'threw', 'tolerated', 'valued', 'worshipped', 'discovered',
     'held', 'stabbed', 'touched', 'pierced', 'tossed'
 ]
+
 V_trans_not_omissible_pp = [
     'liked', 'helped', 'found', 'loved', 'poked',
     'admired', 'adored', 'appreciated', 'missed', 'respected',
@@ -436,6 +438,7 @@ V_unacc = [
     'doubled', 'improved', 'inflated', 'enlarged', 'reddened',
     'shattered', 'blessed', 'squeezed'
 ]
+
 V_unacc_pp = [
     'rolled', 'frozen', 'burned', 'shortened', 'floated',
     'grown', 'slid', 'broken', 'crumpled', 'split',
@@ -521,68 +524,37 @@ grammar = """
     vp_external1: v_unacc_p1 np
     vp_external2: v_trans_omissible_p2 np
     vp_external3: v_trans_not_omissible np
-    vp_external4: v_inf_taking inf v_inf
-    vp_external5: v_cp_taking c start
+    vp_external4: v_inf_taking to v_inf
+    vp_external5: v_cp_taking that start
     vp_external6: v_dat_p1 np pp_iobj
-    vp_external7: v_dat_p2 np_animate_iobj np
+    vp_external7: v_dat_p2 np np
     vp_internal: np v_unacc_p2
     vp_passive: vp_passive1 | vp_passive2 | vp_passive3 | vp_passive4 | vp_passive5 | vp_passive6 | vp_passive7 | vp_passive8
-    vp_passive1: aux v_trans_not_omissible_pp_p1
-    vp_passive2: aux v_trans_not_omissible_pp_p2 by np
-    vp_passive3: aux v_trans_omissible_pp_p1
-    vp_passive4: aux v_trans_omissible_pp_p2 by np
-    vp_passive5: aux v_unacc_pp_p1
-    vp_passive6: aux v_unacc_pp_p2 by np
-    vp_passive7: aux v_dat_pp_p1 pp_iobj
-    vp_passive8: aux v_dat_pp_p2 pp_iobj by np
+    vp_passive1: was v_trans_not_omissible_pp_p1
+    vp_passive2: was v_trans_not_omissible_pp_p2 by np
+    vp_passive3: was v_trans_omissible_pp_p1
+    vp_passive4: was v_trans_omissible_pp_p2 by np
+    vp_passive5: was v_unacc_pp_p1
+    vp_passive6: was v_unacc_pp_p2 by np
+    vp_passive7: was v_dat_pp_p1 pp_iobj
+    vp_passive8: was v_dat_pp_p2 pp_iobj by np
     vp_passive_dat: vp_passive_dat1 | vp_passive_dat2
-    vp_passive_dat1: aux v_dat_pp_p3 np
-    vp_passive_dat2: aux v_dat_pp_p4 np by np
-    np: np_dobj | np_unacc_subj | np_animate_dobj_nopp | np_animate_dobj | np_animate_iobj | np_animate_nsubj | np_animate_nsubjpass | np_inanimate_dobj | np_inanimate_dobj_nopp | np_inanimate_nsubjpass | np_on | np_in | np_beside
-    np_dobj: np_inanimate_dobj | np_animate_dobj
-    np_unacc_subj: np_inanimate_dobj_nopp | np_animate_dobj_nopp
-    np_animate_dobj_nopp: np_animate_dobj_nopp1 | n_prop_dobj
-    np_animate_dobj_nopp1: det n_common_animate_dobj
-    np_animate_dobj: np_animate_dobj1 | np_animate_dobj2 | n_prop_dobj
-    np_animate_dobj1: det n_common_animate_dobj
-    np_animate_dobj2: det n_common_animate_dobj pp_loc            
-    np_animate_iobj: np_animate_iobj1 | n_prop_iobj
-    np_animate_iobj1: det n_common_animate_iobj
-    np_animate_nsubj: np_animate_nsubj1 | n_prop_nsubj
-    np_animate_nsubj1: det n_common_animate_nsubj
-    np_animate_nsubjpass: np_animate_nsubjpass1 | n_prop_nsubjpass
-    np_animate_nsubjpass1: det n_common_animate_nsubjpass
-    np_inanimate_dobj: np_inanimate_dobj1 | np_inanimate_dobj2
-    np_inanimate_dobj1: det n_common_inanimate_dobj
-    np_inanimate_dobj2: det n_common_inanimate_dobj pp_loc
-    np_inanimate_dobj_nopp: det n_common_inanimate_dobj
-    np_inanimate_nsubjpass: det n_common_inanimate_nsubjpass
-    np_on: np_on1 | np_on2
-    np_on1: det n_on pp_loc
-    np_on2: det n_on
-    np_in: np_in1 | np_in2
-    np_in1: det n_in pp_loc
-    np_in2: det n_in
-    np_beside: np_bedside1 | np_bedside2
-    np_bedside1: det n_beside pp_loc
-    np_bedside2: det n_beside
+    vp_passive_dat1: was v_dat_pp_p3 np
+    vp_passive_dat2: was v_dat_pp_p4 np by np
+    np: np_prop | np_det | np_pp
+    np_prop: proper_noun
+    np_det: det common_noun
+    np_pp: det common_noun pp_loc
+    pp_loc: pp np
+    pp_iobj: to np
     det: \"the\" | \"a\"
-    c: \"that\"
-    aux: \"was\"
+    pp: \"on\" | \"in\" | \"beside\"
+    was: \"was\"
     by: \"by\"
-    n_common_animate_dobj: {animate_nouns_str}
-    n_common_animate_iobj: {animate_nouns_str}
-    n_common_animate_nsubj: {animate_nouns_str}
-    n_common_animate_nsubjpass: {animate_nouns_str}
-    n_common_inanimate_dobj: {inanimate_nouns_str}
-    n_common_inanimate_nsubjpass: {inanimate_nouns_str}
-    n_prop_dobj: {proper_nouns_str}
-    n_prop_iobj: {proper_nouns_str}
-    n_prop_nsubj: {proper_nouns_str}
-    n_prop_nsubjpass: {proper_nouns_str}
-    n_on: {on_nouns_str}
-    n_in: {in_nouns_str}
-    n_beside: {beside_nouns_str}
+    to: \"to\"
+    that: \"that\"
+    common_noun: {animate_nouns_str} | {inanimate_nouns_str} | {on_nouns_str} | {in_nouns_str} | {beside_nouns_str}
+    proper_noun: {proper_nouns_str}
     v_trans_omissible_p1: {V_trans_omissible_str}
     v_trans_omissible_p2: {V_trans_omissible_str}
     v_trans_omissible_pp_p1: {V_trans_omissible_pp_str}
@@ -604,16 +576,6 @@ grammar = """
     v_dat_pp_p2: {V_dat_pp_str}
     v_dat_pp_p3: {V_dat_pp_str}
     v_dat_pp_p4: {V_dat_pp_str}
-    pp_iobj: piobj np_animate_iobj
-    pp_loc: pp_loc1 | pp_loc2 | pp_loc3
-    pp_loc1: pon np_on
-    pp_loc2: pin np_in
-    pp_loc3: pbedside np_beside
-    piobj: \"to\"
-    pon: \"on\"
-    pin: \"in\"
-    pbedside: \"beside\"
-    inf: \"to\"
     
     %import common.LETTER
     %import common.WS
@@ -646,103 +608,63 @@ class Types(IntEnum):
     S1 = 2
     S2 = 3
     S3 = 4
-    VP_EXTERNAL = 5
-    VP_EXTERNAL1 = 6
-    VP_EXTERNAL2 = 7
-    VP_EXTERNAL3 = 8
-    VP_EXTERNAL4 = 9
-    VP_EXTERNAL5 = 10
-    VP_EXTERNAL6 = 11
-    VP_EXTERNAL7 = 12
-    VP_INTERNAL = 13
-    VP_PASSIVE = 14
-    VP_PASSIVE1 = 15
-    VP_PASSIVE2 = 16
-    VP_PASSIVE3 = 17
-    VP_PASSIVE4 = 18
-    VP_PASSIVE5 = 19
-    VP_PASSIVE6 = 20
-    VP_PASSIVE7 = 21
-    VP_PASSIVE8 = 22
-    VP_PASSIVE_DAT = 23
-    VP_PASSIVE_DAT1 = 24
-    VP_PASSIVE_DAT2 = 25
-    NP_DOBJ = 26
-    NP_UNACC_SUBJ = 27
-    NP_ANIMATE_DOBJ_NOPP = 28
-    NP_ANIMATE_DOBJ_NOPP1 = 29
-    NP_ANIMATE_DOBJ = 30
-    NP_ANIMATE_DOBJ1 = 31
-    NP_ANIMATE_DOBJ2 = 32
-    NP_ANIMATE_IOBJ = 33
-    NP_ANIMATE_IOBJ1 = 34
-    NP_ANIMATE_NSUBJ = 35
-    NP_ANIMATE_NSUBJ1 = 36
-    NP_ANIMATE_NSUBJPASS = 37
-    NP_ANIMATE_NSUBJPASS1 = 38
-    NP_INANIMATE_DOBJ = 39
-    NP_INANIMATE_DOBJ1 = 40
-    NP_INANIMATE_DOBJ2 = 41
-    NP_INANIMATE_DOBJ_NOPP = 42
-    NP_INANIMATE_NSUBJPASS = 43
-    NP_ON = 44
-    NP_ON1 = 45
-    NP_ON2 = 46
-    NP_IN = 47
-    NP_IN1 = 48
-    NP_IN2 = 49
-    NP_BEDSIDE = 50
-    NP_BEDSIDE1 = 51
-    NP_BEDSIDE2 = 52
-    DET = 53
-    C = 54
-    AUX = 55
-    BY = 56
-    N_COMMON_ANIMATE_DOBJ = 57
-    N_COMMON_ANIMATE_IOBJ = 58
-    N_COMMON_ANIMATE_NSUBJ = 59
-    N_COMMON_ANIMATE_NSUBJPASS = 60
-    N_COMMON_INANIMATE_DOBJ = 61
-    N_COMMON_INANIMATE_NSUBJPASS = 62
-    N_PROP_DOBJ = 63
-    N_PROP_IOBJ = 64
-    N_PROP_NSUBJ = 65
-    N_PROP_NSUBJPASS = 66
-    N_ON = 67
-    N_IN = 68
-    N_BEDSIDE = 69
-    V_TRANS_OMISSABLE_P1 = 70
-    V_TRANS_OMISSABLE_P2 = 71
-    V_TRANS_OMISSABLE_PP_P1 = 72
-    V_TRANS_OMISSABLE_PP_P2 = 73
-    V_TRANS_NOT_OMISSABLE = 74
-    V_TRANS_NOT_OMISSABLE_PP_P1 = 75
-    V_TRANS_NOT_OMISSABLE_PP_P2 = 76
-    V_CP_TAKING = 77
-    V_INF_TAKING = 78
-    V_UNACC_P1 = 79
-    V_UNACC_P2 = 80
-    V_UNACC_PP_P1 = 81
-    V_UNACC_PP_P2 = 82
-    V_UNERG = 83
-    V_INF = 84
-    V_DAT_P1 = 85
-    V_DAT_P2 = 86
-    V_DAT_PP_P1 = 87
-    V_DAT_PP_P2 = 88
-    V_DAT_PP_P3 = 89
-    V_DAT_PP_P4 = 90
-    PP_IOBJ = 91
-    PP_LOC = 92
-    PP_LOC1 = 93
-    PP_LOC2 = 94
-    PP_LOC3 = 95
-    P_IOBJ = 96
-    P_ON = 97
-    P_IN = 98
-    P_BEDSIDE = 99
-    INF = 100
-    S4 = 101
+    S4 = 5
+    VP_EXTERNAL = 6
+    VP_EXTERNAL1 = 7
+    VP_EXTERNAL2 = 8
+    VP_EXTERNAL3 = 9
+    VP_EXTERNAL4 = 10
+    VP_EXTERNAL5 = 11
+    VP_EXTERNAL6 = 12
+    VP_EXTERNAL7 = 13
+    VP_INTERNAL = 14
+    VP_PASSIVE = 15
+    VP_PASSIVE1 = 16
+    VP_PASSIVE2 = 17
+    VP_PASSIVE3 = 18
+    VP_PASSIVE4 = 19
+    VP_PASSIVE5 = 20
+    VP_PASSIVE6 = 21
+    VP_PASSIVE7 = 22
+    VP_PASSIVE8 = 23
+    VP_PASSIVE_DAT = 24
+    VP_PASSIVE_DAT1 = 25
+    VP_PASSIVE_DAT2 = 26
+    NP = 27
+    NP_PROP = 28
+    NP_DET = 29
+    NP_PP = 30
+    PP_LOC = 31
+    PP_IOBJ = 32
+    DET = 33
+    PP = 34
+    WAS = 35
+    BY = 36
+    TO = 37
+    THAT = 38
+    COMMON_NOUN = 39
+    PROPER_NOUN = 40
+    V_TRANS_OMISSABLE_P1 = 41
+    V_TRANS_OMISSABLE_P2 = 42
+    V_TRANS_OMISSABLE_PP_P1 = 43
+    V_TRANS_OMISSABLE_PP_P2 = 44
+    V_TRANS_NOT_OMISSABLE = 45
+    V_TRANS_NOT_OMISSABLE_PP_P1 = 46
+    V_TRANS_NOT_OMISSABLE_PP_P2 = 47
+    V_CP_TAKING = 48
+    V_INF_TAKING = 49
+    V_UNACC_P1 = 50
+    V_UNACC_P2 = 51
+    V_UNACC_PP_P1 = 52
+    V_UNACC_PP_P2 = 53
+    V_UNERG = 54
+    V_INF = 55
+    V_DAT_P1 = 56
+    V_DAT_P2 = 57
+    V_DAT_PP_P1 = 58
+    V_DAT_PP_P2 = 59
+    V_DAT_PP_P3 = 60
+    V_DAT_PP_P4 = 61
 
 
 token_to_type = {
@@ -772,50 +694,20 @@ token_to_type = {
     "vp_passive_dat": Types.VP_PASSIVE_DAT,
     "vp_passive_dat1": Types.VP_PASSIVE_DAT1,
     "vp_passive_dat2": Types.VP_PASSIVE_DAT2,
-    "np_dobj": Types.NP_DOBJ,
-    "np_unacc_subj": Types.NP_UNACC_SUBJ,
-    "np_animate_dobj_nopp": Types.NP_ANIMATE_DOBJ_NOPP,
-    "np_animate_dobj_nopp1": Types.NP_ANIMATE_DOBJ_NOPP1,
-    "np_animate_dobj": Types.NP_ANIMATE_DOBJ,
-    "np_animate_dobj1": Types.NP_ANIMATE_DOBJ1,
-    "np_animate_dobj2": Types.NP_ANIMATE_DOBJ2,
-    "np_animate_iobj": Types.NP_ANIMATE_IOBJ,
-    "np_animate_iobj1": Types.NP_ANIMATE_IOBJ1,
-    "np_animate_nsubj": Types.NP_ANIMATE_NSUBJ,
-    "np_animate_nsubj1": Types.NP_ANIMATE_NSUBJ1,
-    "np_animate_nsubjpass": Types.NP_ANIMATE_NSUBJPASS,
-    "np_animate_nsubjpass1": Types.NP_ANIMATE_NSUBJPASS1,
-    "np_inanimate_dobj": Types.NP_INANIMATE_DOBJ,
-    "np_inanimate_dobj1": Types.NP_INANIMATE_DOBJ1,
-    "np_inanimate_dobj2": Types.NP_INANIMATE_DOBJ2,
-    "np_inanimate_dobj_nopp": Types.NP_INANIMATE_DOBJ_NOPP,
-    "np_inanimate_nsubjpass": Types.NP_INANIMATE_NSUBJPASS,
-    "np_on": Types.NP_ON,
-    "np_on1": Types.NP_ON1,
-    "np_on2": Types.NP_ON2,
-    "np_in": Types.NP_IN,
-    "np_in1": Types.NP_IN1,
-    "np_in2": Types.NP_IN2,
-    "np_beside": Types.NP_BEDSIDE,
-    "np_bedside1": Types.NP_BEDSIDE1,
-    "np_bedside2": Types.NP_BEDSIDE2,
+    "np": Types.NP,
+    "np_prop": Types.NP_PROP,
+    "np_det": Types.NP_DET,
+    "np_pp": Types.NP_PP,
+    "pp_loc": Types.PP_LOC,
+    "pp_iobj": Types.PP_IOBJ,
     "det": Types.DET,
-    "c": Types.C,
-    "aux": Types.AUX,
+    "pp": Types.PP,
+    "was": Types.WAS,
     "by": Types.BY,
-    "n_common_animate_dobj": Types.N_COMMON_ANIMATE_DOBJ,
-    "n_common_animate_iobj": Types.N_COMMON_ANIMATE_IOBJ,
-    "n_common_animate_nsubj": Types.N_COMMON_ANIMATE_NSUBJ,
-    "n_common_animate_nsubjpass": Types.N_COMMON_ANIMATE_NSUBJPASS,
-    "n_common_inanimate_dobj": Types.N_COMMON_INANIMATE_DOBJ,
-    "n_common_inanimate_nsubjpass": Types.N_COMMON_INANIMATE_NSUBJPASS,
-    "n_prop_dobj": Types.N_PROP_DOBJ,
-    "n_prop_iobj": Types.N_PROP_IOBJ,
-    "n_prop_nsubj": Types.N_PROP_NSUBJ,
-    "n_prop_nsubjpass": Types.N_PROP_NSUBJPASS,
-    "n_on": Types.N_ON,
-    "n_in": Types.N_IN,
-    "n_beside": Types.N_BEDSIDE,
+    "to": Types.TO,
+    "that": Types.THAT,
+    "common_noun": Types.COMMON_NOUN,
+    "proper_noun": Types.PROPER_NOUN,
     "v_trans_omissible_p1": Types.V_TRANS_OMISSABLE_P1,
     "v_trans_omissible_p2": Types.V_TRANS_OMISSABLE_P2,
     "v_trans_omissible_pp_p1": Types.V_TRANS_OMISSABLE_PP_P1,
@@ -836,50 +728,27 @@ token_to_type = {
     "v_dat_pp_p1": Types.V_DAT_PP_P1,
     "v_dat_pp_p2": Types.V_DAT_PP_P2,
     "v_dat_pp_p3": Types.V_DAT_PP_P3,
-    "v_dat_pp_p4": Types.V_DAT_PP_P4,
-    "pp_iobj": Types.PP_IOBJ,
-    "pp_loc": Types.PP_LOC,
-    "pp_loc1": Types.PP_LOC1,
-    "pp_loc2": Types.PP_LOC2,
-    "pp_loc3": Types.PP_LOC3,
-    "piobj": Types.P_IOBJ,
-    "pon": Types.P_ON,
-    "pin": Types.P_IN,
-    "pbedside": Types.P_BEDSIDE,
-    "inf": Types.INF,
-    "np_animate_dobj_nopp1": Types.NP_ANIMATE_DOBJ_NOPP1
+    "v_dat_pp_p4": Types.V_DAT_PP_P4
 }
 
 
-exclude_types = ["piobj", "pon", "pin", "pbedside", "det", "c", "aux", "by", "inf",
-                 "n_common_animate_dobj", "n_common_animate_iobj", "n_common_animate_nsubj",
-                 "n_common_animate_nsubjpass", "n_common_inanimate_dobj", "n_common_inanimate_nsubjpass",
-                 "n_prop_dobj", "n_prop_iobj", "n_prop_nsubj", "n_prop_nsubjpass", "n_on", "n_in",
-                 "n_beside", "start", "vp_external", "vp_passive", "vp_passive_dat", "np_dobj", "np_unacc_subj",
-                 "np_animate_dobj_nopp", "np_animate_dobj", "np_animate_iobj", "np_animate_nsubj",
-                 "np_animate_nsubjpass", "np_inanimate_dobj", "np_on", "np_in", "np_beside", "pp_loc", "np"]
+exclude_types = ['start', 'det', 'pp', 'was', 'by', 'to', 'that', 'common_noun', 'proper_noun',
+                 'vp_external', 'vp_passive', 'vp_passive_dat', 'np']
 
 five_span_types = ['vp_passive8', 'vp_passive_dat2']
 
 four_span_types = ['vp_passive2', 'vp_passive4', 'vp_passive6']
 
-three_span_types = ['vp_external4', 'vp_external5', 'vp_external6', 'vp_external7', 'vp_passive7', \
-                    'vp_passive_dat1', 'np_animate_dobj2', 'np_inanimate_dobj2', 'np_on1', 'np_in1', 'np_bedside1']
+three_span_types = ['vp_external4', 'vp_external5', 'vp_external6', 'vp_external7', 'vp_passive7',
+                    'vp_passive_dat1', 'np_pp']
 
-two_span_types = ['s1', 's2', 's3', 's4', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal', \
-                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_animate_dobj1', 'np_animate_iobj1', \
-                  'np_animate_nsubj1', 'np_inanimate_dobj1', 'np_inanimate_dobj_nopp', 'np_inanimate_nsubjpass', \
-                  'np_on2', 'np_in2', 'np_bedside2', 'pp_iobj', 'pp_loc1', 'pp_loc2', 'pp_loc3', \
-                  'np_animate_nsubjpass1', 'np_animate_dobj_nopp1']
+two_span_types = ['s1', 's2', 's3', 's4', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal',
+                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_det', 'pp_iobj', 'pp_loc']
 
-one_span_types = ['n_common_animate_dobj', 'n_common_animate_iobj', 'n_common_animate_nsubj', \
-                  'n_common_animate_nsubjpass', 'n_common_inanimate_dobj', 'n_common_inanimate_nsubjpass', \
-                  'n_prop_dobj', 'n_prop_iobj', 'n_prop_nsubj', 'n_prop_nsubjpass', 'n_on', 'n_in', 'n_beside', \
-                  'v_trans_omissible_p1', 'v_trans_omissible_p2', 'v_trans_omissible_pp_p1', 'v_trans_omissible_pp_p2', \
-                  'v_trans_not_omissible', 'v_trans_not_omissible_pp_p1', 'v_trans_not_omissible_pp_p2', \
-                  'v_cp_taking', 'v_inf_taking', 'v_unacc_p1', 'v_unacc_p2', 'v_unacc_pp_p1', 'v_unacc_pp_p2', \
-                  'v_unerg', 'v_inf', 'v_dat_p1', 'v_dat_p2', 'v_dat_pp_p1', 'v_dat_pp_p2', 'v_dat_pp_p3', 'v_dat_pp_p4', \
-                  'det', 'c', 'aux', 'by', 'piobj', 'pon', 'pin', 'pbedside', 'inf', 'pp_loc', 'np_beside', 'np_in', \
-                  'np_on', 'np_inanimate_dobj', 'np_animate_nsubjpass', 'np_animate_nsubj', 'np_animate_iobj', \
-                  'np_animate_dobj', 'np_unacc_subj', 'np_dobj', 'vp_passive_dat', 'vp_passive', 'vp_external', \
-                  'np_animate_dobj_nopp', 'det', 'start']
+one_span_types = ['common_noun', 'proper_noun', 'v_trans_omissible_p1', 'v_trans_omissible_p2',
+                  'v_trans_omissible_pp_p1', 'v_trans_omissible_pp_p2', 'v_trans_not_omissible',
+                  'v_trans_not_omissible_pp_p1', 'v_trans_not_omissible_pp_p2', 'v_cp_taking',
+                  'v_inf_taking', 'v_unacc_p1', 'v_unacc_p2', 'v_unacc_pp_p1', 'v_unacc_pp_p2',
+                  'v_unerg', 'v_inf', 'v_dat_p1', 'v_dat_p2', 'v_dat_pp_p1', 'v_dat_pp_p2',
+                  'v_dat_pp_p3', 'v_dat_pp_p4', 'det', 'pp', 'was', 'by', 'to', 'that', 'np_prop',
+                  'vp_passive_dat', 'vp_passive', 'vp_external', 'start']
