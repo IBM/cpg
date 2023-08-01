@@ -1,15 +1,9 @@
 import argparse
-import logging
-import os
-from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
 import torch
 
-from src.model.basic import run_iter, add_scalar_summary
-
-
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(levelname)-8s %(message)s')
+from src.model.basic import run_iter
 
 
 def evaluate(args):
@@ -27,16 +21,8 @@ def evaluate(args):
     #dataset.max_x_seq_len = 60
     #dataset.max_y_seq_len = 500
 
-    logging.info(f"Test set size: {len(test_data)}")
-    logging.info(f"Test set sample:\n\tx: {test_data[0][0]}\n\ty: {test_data[0][1]}")
-    logging.info(f"X Vocab size: {len(x_vocab)}")
-    logging.info(f"Y Vocab size: {len(y_vocab)}")
-
     curriculum_stage = dataset.get_next_curriculum_stage()
 
-    test_summary_writer = SummaryWriter(
-        log_dir=os.path.join(args.save_dir, 'log', 'valid'))
-    
     accuracy_sum_total = 0 # sum of accuracy for all test batches
     num_batches_total = 0 # number of all test batches
     while curriculum_stage != None:
@@ -44,15 +30,14 @@ def evaluate(args):
         test_accuracy_sum = 0
         num_test_batches = test_loader.num_batches
         if num_test_batches != 0:
-            for test_batch in test_loader:
+            for test_batch in tqdm(test_loader, total=num_test_batches):
                 _, test_accuracy = run_iter(model, test_batch, print_error=True)
                 test_accuracy_sum += test_accuracy.item()
             test_accuracy = test_accuracy_sum / num_test_batches
             accuracy_sum_total += test_accuracy_sum
             num_batches_total += num_test_batches
             test_accuracy_total = accuracy_sum_total / num_batches_total
-            add_scalar_summary(summary_writer=test_summary_writer, name='accuracy', value=test_accuracy, step=num_batches_total)
-            logging.info(f'curriculum stage {curriculum_stage[0]} to {curriculum_stage[1]}: '
+            print(f'curriculum stage {curriculum_stage[0]} to {curriculum_stage[1]}: '
                          f'test accuracy = {test_accuracy:.4f}, total test accuracy = {test_accuracy_total:.4f}')
         
         # pass to the next curriculum stage
@@ -62,14 +47,12 @@ def evaluate(args):
 def main():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
     parser.add_argument('--model-path', required=True)
-    parser.add_argument('--max-epoch', required=True, type=int)
-    parser.add_argument('--batch-size', required=True, type=int)
+    parser.add_argument('--max-epoch', default=300000, type=int)
+    parser.add_argument('--batch-size', default=1, type=int)
     parser.add_argument('--save-dir', required=True)
-    parser.add_argument('--print-in-valid', default=False, action='store_true')
-    parser.add_argument('--use-curriculum', default=False, action='store_true')
-    parser.add_argument('--dataset', type=str)
-    parser.add_argument('--training-set', type=str)
-    parser.add_argument('--test-set', type=str)
+    parser.add_argument('--dataset', required=True, type=str)
+    parser.add_argument('--training-set', required=True, type=str)
+    parser.add_argument('--test-set', required=True, type=str)
     args = parser.parse_args()
     evaluate(args)
 

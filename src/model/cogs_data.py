@@ -154,7 +154,7 @@ class COGSDataset(nn.Module):
         output_terms = torch.zeros(B, self.term_list_len, V)
         for i in range(B):
             new_type = new_types[i].item()
-            # copy input variables
+            # copy input terms
             var_idx = 0
             type_idx = []
             for j in range(N):

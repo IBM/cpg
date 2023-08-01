@@ -1,8 +1,11 @@
-# Learning to Compose Task-Specific Tree Structures
-Implementation of the paper [Learning to Compose Task-Specific Tree Structures](https://arxiv.org/abs/1707.02786).
+## To train on SCAN
+``python -m src.model.train --save-dir pretrained/scan --dataset SCAN --training-set scan_data/SCAN_add_jump_0_train_no_jump_oversampling.txt --validation-set scan_data/SCAN_add_jump_4_test.txt``
 
-## Environment
-Tested on Python 3.6 and PyTorch 0.4.1.
+## To evaluate on SCAN
+``python -m src.model.evaluate --model-path pretrained/scan/model-7-7-1.00-1.0000.pkl --save-dir pretrained/scan --dataset SCAN --training-set scan_data/SCAN_add_jump_0_train_no_jump_oversampling.txt --test-set scan_data/SCAN_add_jump_4_test.txt``
 
-## How to Run
-See ``python -m [task].[operation] --help``
+## To train on COGS
+``python -m src.model.train --save-dir pretrained/cogs --dataset COGS --training-set cogs_data/cogs_train_few_shot.tsv --validation-set cogs_data/cogs_dev.tsv``
+
+## To evaluate on COGS
+``python -m src.model.evaluate --model-path pretrained\cogs\model-7-9-872.00-1.0000.pkl --save-dir pretrained/cogs --dataset COGS --training-set cogs_data/cogs_train_few_shot.tsv --test-set cogs_data/cogs_gen.tsv``

@@ -216,11 +216,6 @@ def run_iter(model, batch, params=None, optimizer=None, is_training=False, verbo
         optimizer.step()
     return loss, accuracy
 
-def add_scalar_summary(summary_writer, name, value, step):
-    if torch.is_tensor(value):
-        value = value.item()
-    summary_writer.add_scalar(tag=name, scalar_value=value, global_step=step)
-
 
 def quote(l):
     return map(lambda x: "\"" + x + "\"", l)
