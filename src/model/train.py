@@ -17,10 +17,11 @@ from src.model.basic import run_iter
 
 
 def train(args):
-    seed = 41
+    seed = 1
     np.random.seed(seed)
     torch.manual_seed(seed)
     random.seed(seed)
+    print('Running with seed:', seed)
 
     if args.dataset == 'SCAN':
         dataset = SCANDataset(args.word_dim, args.template_dim)

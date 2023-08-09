@@ -22,7 +22,8 @@ class COGSDataset(nn.Module):
         self.type_dim = 62
         self.max_x_seq_len = 20
         self.max_y_seq_len = 160
-        self.predict_zero = True
+        self.predict_zero_level = 0 # 0 indicates all non-zero, 1 indicates only allowing zeros at leaf
+                                    # 2 indicates only allowing zeros at leaf and one level above, and so on
 
         self.y_vocab = None
         self.x_vocab = None
@@ -66,11 +67,10 @@ class COGSDataset(nn.Module):
 
         self.parser = Lark(grammar, propagate_positions=True)
 
-    def reset_hyperparameters(self, iteration_stage):
-        if iteration_stage > 2000:
-            self.predict_zero = True
-        else:
-            self.predict_zero = False
+    def reset_hyperparameters(self, iteration_stage, eval=False):
+        self.predict_zero_level = int(iteration_stage / 2000)
+        if eval:
+            self.predict_zero_level = -1
     
     def record_templates(self):
         self.substitution_template.record_templates()
@@ -174,13 +174,19 @@ class COGSDataset(nn.Module):
             template_idx.append(self.template_type_len[new_type].sum().int())
 
         # generate substitution templates
-        template_sub = self.substitution_template.generate_template(new_types, template_idx, gumbel_temp, self.predict_zero)
+        predict_zero = (self.predict_zero_level != 0)
+        template_sub = self.substitution_template.generate_template(new_types, template_idx, gumbel_temp, predict_zero)
         for i in range(B):
             new_type = new_types[i].item()
             # skip substitution process for padding and some verbs
             if new_type == 0 or (40 < new_type < 62 and new_type not in [41, 51, 54]):
                 template_sub[i] = torch.zeros(self.sub_template_len, self.term_list_len+1)
                 template_sub[i, :, 0] = torch.ones(self.sub_template_len)
+            else:
+                if self.predict_zero_level not in [0, -1]:
+                    self.predict_zero_level -= 1
+                #print('template for type ' + str(new_type) + ' is: '
+                      #+ str(template_sub[i].argmax(-1).tolist()).replace('[', '').replace(']', '').replace(',', ''))
         
         output_decodings = self.substitution_template.apply_template(output_decodings, output_terms, template_sub)
         return output_decodings, output_terms
@@ -296,7 +302,7 @@ class COGSDataset(nn.Module):
 
         data_loader = MyDataLoader(preprocessed_data,
                                     batch_size=batch_size,
-                                    shuffle=True,
+                                    shuffle=False,
                                     x_pad_idx=self.x_vocab.token_to_idx('<PAD>'),
                                     y_pad_idx=self.y_vocab.token_to_idx('<PAD>'),
                                     max_x_seq_len=self.max_x_seq_len,
@@ -544,7 +550,7 @@ grammar = """
     np: np_prop | np_det | np_pp
     np_prop: proper_noun
     np_det: det common_noun
-    np_pp: det common_noun pp_loc
+    np_pp: np_det pp_loc
     pp_loc: pp np
     pp_iobj: to np
     det: \"the\" | \"a\"
@@ -740,10 +746,10 @@ five_span_types = ['vp_passive8', 'vp_passive_dat2']
 four_span_types = ['vp_passive2', 'vp_passive4', 'vp_passive6']
 
 three_span_types = ['vp_external4', 'vp_external5', 'vp_external6', 'vp_external7', 'vp_passive7',
-                    'vp_passive_dat1', 'np_pp']
+                    'vp_passive_dat1']
 
 two_span_types = ['s1', 's2', 's3', 's4', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal',
-                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_det', 'pp_iobj', 'pp_loc']
+                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_det', 'pp_iobj', 'pp_loc', 'np_pp']
 
 one_span_types = ['common_noun', 'proper_noun', 'v_trans_omissible_p1', 'v_trans_omissible_p2',
                   'v_trans_omissible_pp_p1', 'v_trans_omissible_pp_p2', 'v_trans_not_omissible',

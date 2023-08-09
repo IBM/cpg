@@ -39,7 +39,7 @@ class SCANDataset(nn.Module):
         self.initial_decodings = nn.ParameterDict()
         self.initial_decodings_current = nn.ParameterDict()
 
-    def reset_hyperparameters(self, iteration_stage):
+    def reset_hyperparameters(self, iteration_stage, eval=False):
         return
 
     def record_templates(self):
@@ -184,7 +184,7 @@ class SCANDataset(nn.Module):
 
         data_loader = MyDataLoader(preprocessed_train_data,
                                     batch_size=batch_size,
-                                    shuffle=True,
+                                    shuffle=False,
                                     x_pad_idx=self.x_vocab.token_to_idx('<PAD>'),
                                     y_pad_idx=self.y_vocab.token_to_idx('<PAD>'),
                                     max_x_seq_len=self.max_x_seq_len,

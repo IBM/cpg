@@ -149,6 +149,7 @@ class CompositionalLearner(nn.Module):
 
     def start_eval(self):
         self.gumbel_temp = 1e-10
+        self.dataset.reset_hyperparameters(0, eval=True)
 
     def record_templates(self):
         self.dataset.record_templates()
