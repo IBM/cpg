@@ -17,11 +17,11 @@ from src.model.basic import run_iter
 
 
 def train(args):
-    seed = 1
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    random.seed(seed)
-    print('Running with seed:', seed)
+    if args.seed != -1:
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        random.seed(args.seed)
+        print('Running with seed:', args.seed)
 
     if args.dataset == 'SCAN':
         dataset = SCANDataset(args.word_dim, args.template_dim)
@@ -133,6 +133,7 @@ def main():
     parser.add_argument('--dataset', required=True, type=str)
     parser.add_argument('--training-set', required=True, type=str)
     parser.add_argument('--validation-set', required=True, type=str)
+    parser.add_argument('--seed', default=-1, type=int)
     parser.add_argument('--verbose', default=False, action='store_true')
     args = parser.parse_args()
     train(args)
