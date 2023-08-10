@@ -19,7 +19,7 @@ class COGSDataset(nn.Module):
         self.max_span = 5
         self.sub_template_len = 15
         self.term_list_len = 80
-        self.type_dim = 62
+        self.type_dim = 61
         self.max_x_seq_len = 20
         self.max_y_seq_len = 160
         self.predict_zero_level = 0 # 0 indicates all non-zero, 1 indicates only allowing zeros at leaf
@@ -38,27 +38,27 @@ class COGSDataset(nn.Module):
                                            {'in' : 'y . nmod . in ( y , y )'} |\
                                            {'beside' : 'y . nmod . beside ( y , y )'}
         
-        self.initial_decodings_vtype = {41: 'y . agent ( y , y )',
-                                        42: 'y . agent ( y , y ) y . theme ( y , y )',
-                                        43: 'y . theme ( y , y )',
-                                        44: 'y . theme ( y , y ) y . agent ( y , y )',
-                                        45: 'y . agent ( y , y ) y . theme ( y , y )',
-                                        46: 'y . theme ( y , y )',
-                                        47: 'y . theme ( y , y ) y . agent ( y , y )',
-                                        48: 'y . agent ( y , y ) y . ccomp ( y , y )',
-                                        49: 'y . agent ( y , y ) y . xcomp ( y , y )',
-                                        50: 'y . agent ( y , y ) y . theme ( y , y )',
+        self.initial_decodings_vtype = {40: 'y . agent ( y , y )',
+                                        41: 'y . agent ( y , y ) y . theme ( y , y )',
+                                        42: 'y . theme ( y , y )',
+                                        43: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        44: 'y . agent ( y , y ) y . theme ( y , y )',
+                                        45: 'y . theme ( y , y )',
+                                        46: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        47: 'y . agent ( y , y ) y . ccomp ( y , y )',
+                                        48: 'y . agent ( y , y ) y . xcomp ( y , y )',
+                                        49: 'y . agent ( y , y ) y . theme ( y , y )',
+                                        50: 'y . theme ( y , y )',
                                         51: 'y . theme ( y , y )',
-                                        52: 'y . theme ( y , y )',
-                                        53: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        52: 'y . theme ( y , y ) y . agent ( y , y )',
+                                        53: 'y . agent ( y , y )',
                                         54: 'y . agent ( y , y )',
-                                        55: 'y . agent ( y , y )',
-                                        56: 'y . agent ( y , y ) y . theme ( y , y ) y . recipient ( y , y )',
-                                        57: 'y . agent ( y , y ) y . recipient ( y , y ) y . theme ( y , y )',
-                                        58: 'y . theme ( y , y ) y . recipient ( y , y )',
-                                        59: 'y . theme ( y , y ) y . recipient ( y , y ) y . agent ( y , y )',
-                                        60: 'y . recipient ( y , y ) y . theme ( y , y )',
-                                        61: 'y . recipient ( y , y ) y . theme ( y , y ) y . agent ( y , y )'}
+                                        55: 'y . agent ( y , y ) y . theme ( y , y ) y . recipient ( y , y )',
+                                        56: 'y . agent ( y , y ) y . recipient ( y , y ) y . theme ( y , y )',
+                                        57: 'y . theme ( y , y ) y . recipient ( y , y )',
+                                        58: 'y . theme ( y , y ) y . recipient ( y , y ) y . agent ( y , y )',
+                                        59: 'y . recipient ( y , y ) y . theme ( y , y )',
+                                        60: 'y . recipient ( y , y ) y . theme ( y , y ) y . agent ( y , y )'}
         
         self.initial_terms = {noun : noun for noun in set(noun_list)} | verbs_lemmas | {verb : verb for verb in set(V_inf)}
 
@@ -179,14 +179,14 @@ class COGSDataset(nn.Module):
         for i in range(B):
             new_type = new_types[i].item()
             # skip substitution process for padding and some verbs
-            if new_type == 0 or (40 < new_type < 62 and new_type not in [41, 51, 54]):
+            if new_type == 0 or (39 < new_type < 61 and new_type not in [40, 50, 53]):
                 template_sub[i] = torch.zeros(self.sub_template_len, self.term_list_len+1)
                 template_sub[i, :, 0] = torch.ones(self.sub_template_len)
             else:
                 if self.predict_zero_level not in [0, -1]:
                     self.predict_zero_level -= 1
-                #print('template for type ' + str(new_type) + ' is: '
-                      #+ str(template_sub[i].argmax(-1).tolist()).replace('[', '').replace(']', '').replace(',', ''))
+                print('template for type ' + str(new_type) + ' is: '
+                      + str(template_sub[i].argmax(-1).tolist()).replace('[', '').replace(']', '').replace(',', ''))
         
         output_decodings = self.substitution_template.apply_template(output_decodings, output_terms, template_sub)
         return output_decodings, output_terms
@@ -550,8 +550,7 @@ grammar = """
     np: np_prop | np_det | np_pp
     np_prop: proper_noun
     np_det: det common_noun
-    np_pp: np_det pp_loc
-    pp_loc: pp np
+    np_pp: np_det pp np
     pp_iobj: to np
     det: \"the\" | \"a\"
     pp: \"on\" | \"in\" | \"beside\"
@@ -640,37 +639,36 @@ class Types(IntEnum):
     NP_PROP = 28
     NP_DET = 29
     NP_PP = 30
-    PP_LOC = 31
-    PP_IOBJ = 32
-    DET = 33
-    PP = 34
-    WAS = 35
-    BY = 36
-    TO = 37
-    THAT = 38
-    COMMON_NOUN = 39
-    PROPER_NOUN = 40
-    V_TRANS_OMISSABLE_P1 = 41
-    V_TRANS_OMISSABLE_P2 = 42
-    V_TRANS_OMISSABLE_PP_P1 = 43
-    V_TRANS_OMISSABLE_PP_P2 = 44
-    V_TRANS_NOT_OMISSABLE = 45
-    V_TRANS_NOT_OMISSABLE_PP_P1 = 46
-    V_TRANS_NOT_OMISSABLE_PP_P2 = 47
-    V_CP_TAKING = 48
-    V_INF_TAKING = 49
-    V_UNACC_P1 = 50
-    V_UNACC_P2 = 51
-    V_UNACC_PP_P1 = 52
-    V_UNACC_PP_P2 = 53
-    V_UNERG = 54
-    V_INF = 55
-    V_DAT_P1 = 56
-    V_DAT_P2 = 57
-    V_DAT_PP_P1 = 58
-    V_DAT_PP_P2 = 59
-    V_DAT_PP_P3 = 60
-    V_DAT_PP_P4 = 61
+    PP_IOBJ = 31
+    DET = 32
+    PP = 33
+    WAS = 34
+    BY = 35
+    TO = 36
+    THAT = 37
+    COMMON_NOUN = 38
+    PROPER_NOUN = 39
+    V_TRANS_OMISSABLE_P1 = 40
+    V_TRANS_OMISSABLE_P2 = 41
+    V_TRANS_OMISSABLE_PP_P1 = 42
+    V_TRANS_OMISSABLE_PP_P2 = 43
+    V_TRANS_NOT_OMISSABLE = 44
+    V_TRANS_NOT_OMISSABLE_PP_P1 = 45
+    V_TRANS_NOT_OMISSABLE_PP_P2 = 46
+    V_CP_TAKING = 47
+    V_INF_TAKING = 48
+    V_UNACC_P1 = 49
+    V_UNACC_P2 = 50
+    V_UNACC_PP_P1 = 51
+    V_UNACC_PP_P2 = 52
+    V_UNERG = 53
+    V_INF = 54
+    V_DAT_P1 = 55
+    V_DAT_P2 = 56
+    V_DAT_PP_P1 = 57
+    V_DAT_PP_P2 = 58
+    V_DAT_PP_P3 = 59
+    V_DAT_PP_P4 = 60
 
 
 token_to_type = {
@@ -704,7 +702,6 @@ token_to_type = {
     "np_prop": Types.NP_PROP,
     "np_det": Types.NP_DET,
     "np_pp": Types.NP_PP,
-    "pp_loc": Types.PP_LOC,
     "pp_iobj": Types.PP_IOBJ,
     "det": Types.DET,
     "pp": Types.PP,
@@ -746,10 +743,10 @@ five_span_types = ['vp_passive8', 'vp_passive_dat2']
 four_span_types = ['vp_passive2', 'vp_passive4', 'vp_passive6']
 
 three_span_types = ['vp_external4', 'vp_external5', 'vp_external6', 'vp_external7', 'vp_passive7',
-                    'vp_passive_dat1']
+                    'vp_passive_dat1', 'np_pp']
 
 two_span_types = ['s1', 's2', 's3', 's4', 'vp_external1', 'vp_external2', 'vp_external3', 'vp_internal',
-                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_det', 'pp_iobj', 'pp_loc', 'np_pp']
+                  'vp_passive1', 'vp_passive3', 'vp_passive5', 'np_det', 'pp_iobj']
 
 one_span_types = ['common_noun', 'proper_noun', 'v_trans_omissible_p1', 'v_trans_omissible_p2',
                   'v_trans_omissible_pp_p1', 'v_trans_omissible_pp_p2', 'v_trans_not_omissible',
