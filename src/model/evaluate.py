@@ -15,11 +15,10 @@ def evaluate(args):
 
     _, test_data, x_vocab, y_vocab = dataset.get_data(args.training_set, args.test_set)
 
-    dataset.reset_curriculum()
-    #if evaluating on COGS generalization set
-    #dataset.curriculum = [(i+2, i+2) for i in range(58)]
-    #dataset.max_x_seq_len = 60
-    #dataset.max_y_seq_len = 500
+    if args.gen_eval:
+        dataset.curriculum = [(i+2, i+2) for i in range(58)]
+    else:
+        dataset.reset_curriculum()
 
     curriculum_stage = dataset.get_next_curriculum_stage()
 
@@ -42,6 +41,9 @@ def evaluate(args):
         
         # pass to the next curriculum stage
         curriculum_stage = dataset.get_next_curriculum_stage()
+        if curriculum_stage == (16, 16):
+            dataset.max_x_seq_len = 60
+            dataset.max_y_seq_len = 500
 
 
 def main():
@@ -53,6 +55,7 @@ def main():
     parser.add_argument('--dataset', required=True, type=str)
     parser.add_argument('--training-set', required=True, type=str)
     parser.add_argument('--test-set', required=True, type=str)
+    parser.add_argument('--gen-eval', default=False, action='store_true')
     args = parser.parse_args()
     evaluate(args)
 
