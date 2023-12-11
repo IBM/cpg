@@ -1,0 +1,22 @@
+Oliver crumpled .	crumple . theme ( x _ 1 , Oliver )	in_distribution
+James investigated .	investigate . agent ( x _ 1 , James )	in_distribution
+Hazel cried .	cry . agent ( x _ 1 , Hazel )	in_distribution
+The captain ate .	* captain ( x _ 1 ) ; eat . agent ( x _ 2 , x _ 1 )	in_distribution
+Emma floated Alexander .	float . agent ( x _ 1 , Emma ) AND float . theme ( x _ 1 , Alexander )	in_distribution
+Noah helped Levi .	help . agent ( x _ 1 , Noah ) AND help . theme ( x _ 1 , Levi )	in_distribution
+William drew Emma .	draw . agent ( x _ 1 , William ) AND draw . theme ( x _ 1 , Emma )	in_distribution
+The donut was studied .	* donut ( x _ 1 ) ; study . theme ( x _ 3 , x _ 1 )	in_distribution
+David expected to cook .	expect . agent ( x _ 1 , David ) AND expect . xcomp ( x _ 1 , x _ 3 ) AND cook . agent ( x _ 3 , David )	in_distribution
+The pen was helped .	* pen ( x _ 1 ) ; help . theme ( x _ 3 , x _ 1 )	in_distribution
+A box was inflated .	box ( x _ 1 ) AND inflate . theme ( x _ 3 , x _ 1 )	in_distribution
+Amelia gave Emma a strawberry .	give . agent ( x _ 1 , Amelia ) AND give . recipient ( x _ 1 , Emma ) AND give . theme ( x _ 1 , x _ 4 ) AND strawberry ( x _ 4 )	in_distribution
+Olivia was slipped a pencil .	slip . recipient ( x _ 2 , Olivia ) AND slip . theme ( x _ 2 , x _ 4 ) AND pencil ( x _ 4 )	in_distribution
+Liam liked that Lucas cleaned .	like . agent ( x _ 1 , Liam ) AND like . ccomp ( x _ 1 , x _ 4 ) AND clean . agent ( x _ 4 , Lucas )	in_distribution
+The cookie was passed to Emma .	* cookie ( x _ 1 ) ; pass . theme ( x _ 3 , x _ 1 ) AND pass . recipient ( x _ 3 , Emma )	in_distribution
+A cake was stabbed by Scarlett .	cake ( x _ 1 ) AND stab . theme ( x _ 3 , x _ 1 ) AND stab . agent ( x _ 3 , Scarlett )	in_distribution
+The cake was eaten by Olivia .	* cake ( x _ 1 ) ; eat . theme ( x _ 3 , x _ 1 ) AND eat . agent ( x _ 3 , Olivia )	in_distribution
+A bottle was rolled by Olivia .	bottle ( x _ 1 ) AND roll . theme ( x _ 3 , x _ 1 ) AND roll . agent ( x _ 3 , Olivia )	in_distribution
+Natalie mailed the cake to Emma .	* cake ( x _ 3 ) ; mail . agent ( x _ 1 , Natalie ) AND mail . theme ( x _ 1 , x _ 3 ) AND mail . recipient ( x _ 1 , Emma )	in_distribution
+Emma ate the ring beside a bed .	* ring ( x _ 3 ) ; eat . agent ( x _ 1 , Emma ) AND eat . theme ( x _ 1 , x _ 3 ) AND ring . nmod . beside ( x _ 3 , x _ 6 ) AND bed ( x _ 6 )	in_distribution
+Emma was posted the cake by Noah .	* cake ( x _ 4 ) ; post . recipient ( x _ 2 , Emma ) AND post . theme ( x _ 2 , x _ 4 ) AND post . agent ( x _ 2 , Noah )	in_distribution
+A cake was forwarded to Levi by Charlotte .	cake ( x _ 1 ) AND forward . theme ( x _ 3 , x _ 1 ) AND forward . recipient ( x _ 3 , Levi ) AND forward . agent ( x _ 3 , Charlotte )	in_distribution
