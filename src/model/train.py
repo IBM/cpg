@@ -29,18 +29,20 @@ def train(args):
         dataset = COGSDataset(args.word_dim, args.template_dim)
 
     train_data, valid_data, x_vocab, y_vocab = dataset.get_data(args.training_set, args.validation_set)
+    if args.wandb:
+        wandb.init(
+            project="CPG",
 
-    wandb.init(
-        project="CPG",
-        
-        # track hyperparameters and run metadata
-        config={
-        "training set size": len(train_data),
-        "validation set size": len(valid_data),
-        "x vocab size": len(x_vocab),
-        "y vocab size": len(y_vocab),
-        }
-    )
+            # track hyperparameters and run metadata
+            config={
+            "training set size": len(train_data),
+            "validation set size": len(valid_data),
+            "x vocab size": len(x_vocab),
+            "y vocab size": len(y_vocab),
+            }
+        )
+    else:
+        wandb.init(mode='disabled')
 
     curriculum_stage = dataset.get_next_curriculum_stage()
     train_loader = dataset.load_data(train_data, curriculum_stage, args.batch_size)
@@ -135,6 +137,7 @@ def main():
     parser.add_argument('--validation-set', required=True, type=str)
     parser.add_argument('--seed', default=-1, type=int)
     parser.add_argument('--verbose', default=False, action='store_true')
+    parser.add_argument('--wandb', default=False, action='store_true')
     args = parser.parse_args()
     train(args)
 

@@ -9,3 +9,5 @@
 
 ## To evaluate on COGS
 ``python -m src.model.evaluate --model-path pretrained\cogs\model-7-9-872.00-1.0000.pkl --save-dir pretrained/cogs --dataset COGS --training-set cogs_data/cogs_train_few_shot.tsv --test-set cogs_data/cogs_gen.tsv``
+
+## optional args: (1) --verbose to get detailed output and evaluation, (2) --wandb to use wandb
