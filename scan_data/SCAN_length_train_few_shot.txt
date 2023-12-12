@@ -1,0 +1,14 @@
+IN: walk OUT: I_WALK
+IN: jump OUT: I_JUMP
+IN: look OUT: I_LOOK
+IN: run OUT: I_RUN
+IN: turn right OUT: I_TURN_RIGHT
+IN: walk right OUT: I_TURN_RIGHT I_WALK
+IN: jump twice OUT: I_JUMP I_JUMP
+IN: run thrice OUT: I_RUN I_RUN I_RUN
+IN: walk after run OUT: I_RUN I_WALK
+IN: turn opposite left OUT: I_TURN_LEFT I_TURN_LEFT
+IN: run and walk OUT: I_RUN I_WALK
+IN: walk opposite left OUT: I_TURN_LEFT I_TURN_LEFT I_WALK
+IN: turn around right OUT: I_TURN_RIGHT I_TURN_RIGHT I_TURN_RIGHT I_TURN_RIGHT
+IN: run around left OUT: I_TURN_LEFT I_RUN I_TURN_LEFT I_RUN I_TURN_LEFT I_RUN I_TURN_LEFT I_RUN

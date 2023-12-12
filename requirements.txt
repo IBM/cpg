@@ -1,0 +1,7 @@
+dill
+lark
+numpy==1.24
+regex
+torch
+tqdm
+wandb
