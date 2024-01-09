@@ -3,10 +3,7 @@ import numpy as np
 
 import torch
 from torch import nn
-from torch.nn import init
-import torch.nn.functional as F
-
-from src.model.basic import int_to_one_hot
+from src.model.basic import int_to_one_hot, gumbel_softmax
 
 
 class CopyTemplate(nn.Module):
@@ -43,7 +40,7 @@ class CopyTemplate(nn.Module):
                     template_copy[i, :, :s+1] = self.templates[str(new_type)]
                 else:
                     template_logits = self.decoder_copy[new_type](torch.ones(self.type_dim))[:self.template_len * (s+1)].view(self.template_len, s+1)
-                    template_copy[i, :, :s+1] = F.gumbel_softmax(template_logits.log_softmax(-1), tau=gumbel_temp, hard=True)
+                    template_copy[i, :, :s+1] = gumbel_softmax(template_logits.log_softmax(-1), temperature=gumbel_temp, hard=True)
                     self.templates_current[str(new_type)] = template_copy[i, :, :s+1]
         return template_copy
 
@@ -105,7 +102,7 @@ class SubstitutionTemplate(nn.Module):
                 template = self.decoder_sub[new_type](torch.ones(self.template_dim)).view(self.template_len, self.term_list_len+1)
                 if not predict_zero:
                     template[:, 0] = torch.ones(self.template_len).mul(-float("Inf"))
-                temp_sub[i, :, :idx+1] = F.gumbel_softmax(template[:, :idx+1].log_softmax(-1), tau=gumbel_temp, hard=True)
+                temp_sub[i, :, :idx+1] = gumbel_softmax(template[:, :idx+1].log_softmax(-1), temperature=gumbel_temp, hard=True)
                 self.templates_current[str(new_type)] = temp_sub[i]
         return temp_sub
 
