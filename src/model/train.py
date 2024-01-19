@@ -135,7 +135,7 @@ def main():
     parser.add_argument('--dataset', required=True, type=str)
     parser.add_argument('--training-set', required=True, type=str)
     parser.add_argument('--validation-set', required=True, type=str)
-    parser.add_argument('--seed', default=-1, type=int)
+    parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--verbose', default=False, action='store_true')
     parser.add_argument('--wandb', default=False, action='store_true')
     args = parser.parse_args()
