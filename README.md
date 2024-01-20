@@ -34,5 +34,5 @@ python -m src.model.evaluate --model-path pretrained/scan/<your-saved-model>.pkl
 
 ### To evaluate on COGS
 ```
-python -m src.model.evaluate --model-path pretrained\cogs\model-7-9-872.00-1.0000.pkl --save-dir pretrained/cogs --dataset COGS --training-set cogs_data/cogs_train_extreme_few_shot.tsv --test-set cogs_data/cogs_gen.tsv
+python -m src.model.evaluate --model-path pretrained\cogs\<your-saved-model>.pkl --save-dir pretrained/cogs --dataset COGS --training-set cogs_data/cogs_train_extreme_few_shot.tsv --test-set cogs_data/cogs_gen.tsv
 ```
