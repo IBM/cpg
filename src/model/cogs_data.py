@@ -289,10 +289,8 @@ class COGSDataset(nn.Module):
             return self.curriculum.pop(0)
         
     def reset_curriculum(self):
-        # self.curriculum = [(2, 3)]
-        # self.curriculum.extend([(3*i+4, 3*i+6) for i in range(5)])
-        # TK DEBUG
-        self.curriculum = [(16, 18)]
+        self.curriculum = [(2, 3)]
+        self.curriculum.extend([(3*i+4, 3*i+6) for i in range(5)])
     
     def preprocess(self, data):
         return [(self.x_vocab.encode(x), self.y_vocab.encode(y)) for x, y in data]
