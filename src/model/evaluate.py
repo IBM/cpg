@@ -25,12 +25,15 @@ def evaluate(args):
     accuracy_sum_total = 0 # sum of accuracy for all test batches
     num_batches_total = 0 # number of all test batches
     while curriculum_stage != None:
+        if curriculum_stage[0] >= 16:
+            dataset.max_x_seq_len = 60
+            dataset.max_y_seq_len = 500
         test_loader = dataset.load_data(test_data, curriculum_stage, args.batch_size)
         test_accuracy_sum = 0
         num_test_batches = test_loader.num_batches
         if num_test_batches != 0:
             for test_batch in tqdm(test_loader, total=num_test_batches):
-                _, test_accuracy = run_iter(model, test_batch, print_error=True)
+                _, test_accuracy = run_iter(model, test_batch, verbose=args.verbose, print_error=True)
                 test_accuracy_sum += test_accuracy.item()
             test_accuracy = test_accuracy_sum / num_test_batches
             accuracy_sum_total += test_accuracy_sum
@@ -41,9 +44,6 @@ def evaluate(args):
         
         # pass to the next curriculum stage
         curriculum_stage = dataset.get_next_curriculum_stage()
-        if curriculum_stage == (16, 16):
-            dataset.max_x_seq_len = 60
-            dataset.max_y_seq_len = 500
 
 
 def main():
@@ -56,6 +56,7 @@ def main():
     parser.add_argument('--training-set', required=True, type=str)
     parser.add_argument('--test-set', required=True, type=str)
     parser.add_argument('--gen-eval', default=False, action='store_true')
+    parser.add_argument('--verbose', default=False, action='store_true')
     args = parser.parse_args()
     evaluate(args)
 
