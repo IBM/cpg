@@ -1,4 +1,4 @@
-## For more details see the paper: Compositional Program Generation for Systematic Generalization
+## For more details see the paper: Compositional Program Generation for Few-Shot Systematic Generalization
 https://arxiv.org/abs/2309.16467
 
 ## Installation
